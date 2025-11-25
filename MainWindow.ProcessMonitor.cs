@@ -191,122 +191,100 @@ namespace PlankWin
         }
 
         /// <summary>
-        /// Перечисляет окна, которые должны быть на панели задач (и в доке).
-        /// Используем EnumWindows + фильтрацию по стилям, плюс спец-логика для Nahimic.
+        /// Перечисляет процессы, которые должны считаться "приложениями" (как в разделе Apps диспетчера задач).
+        /// Ориентируемся на Process.MainWindowHandle / MainWindowTitle, плюс проверка стилей окна.
         /// </summary>
         private IEnumerable<TaskbarApp> EnumerateTaskbarWindows()
         {
-            var result = new Dictionary<int, TaskbarApp>();
-            bool explorerFound = false;
+            var result = new List<TaskbarApp>();
 
-            EnumWindows((hWnd, lParam) =>
+            Process[] processes;
+            try
+            {
+                processes = Process.GetProcesses();
+            }
+            catch
+            {
+                yield break;
+            }
+
+            int currentPid = Process.GetCurrentProcess().Id;
+
+            foreach (var proc in processes)
             {
                 try
                 {
-                    // Невидимые и cloaked окна не считаем "приложениями"
-                    if (!IsWindowVisible(hWnd))
-                        return true;
-
-                    if (IsWindowCloaked(hWnd))
-                        return true;
-
-                    if (IsShellLikeWindow(hWnd))
-                        return true;
-
-                    int textLen = GetWindowTextLength(hWnd);
-                    if (textLen == 0)
-                        return true;
-
-                    var sbTitle = new StringBuilder(textLen + 1);
-                    GetWindowText(hWnd, sbTitle, sbTitle.Capacity);
-                    string title = sbTitle.ToString();
-                    if (string.IsNullOrWhiteSpace(title))
-                        return true;
-
-                    GetWindowThreadProcessId(hWnd, out uint pid);
-                    if (pid == 0)
-                        return true;
-
-                    Process proc;
-                    try
-                    {
-                        proc = Process.GetProcessById((int)pid);
-                    }
-                    catch
-                    {
-                        return true;
-                    }
+                    if (proc.Id == currentPid)
+                        continue;
 
                     string processName = proc.ProcessName;
                     if (string.IsNullOrWhiteSpace(processName))
-                        return true;
+                        continue;
 
-                    // Игнор по списку из конфига
+                    // Игнор по списку из конфига (если когда-то захочешь туда добавить что-то)
                     if (ShouldIgnoreProcess(processName))
-                        return true;
+                        continue;
 
                     string lower = processName.ToLowerInvariant();
 
-                    // Явно игнорируем служебную экранную клавиатуру / IME
+                    // Экранная клавиатура / IME и прочий мусор
                     if (lower.Contains("textinputhost"))
-                        return true;
+                        continue;
 
-                    // Спец-флаг: это системное приложение "Настройки"
                     bool isSettingsApp =
                         lower.Contains("systemsettings") ||
                         lower.Contains("immersivecontrolpanel");
 
-                    // -------- Спец-логика для Nahimic --------
-                    bool isNahimic = lower.Contains("nahimic");
-                    if (isNahimic)
+                    // --- главное окно процесса, как его видит .NET (и примерно так же Task Manager) ---
+                    IntPtr hwnd;
+                    string title;
+                    try
                     {
-                        IntPtr mainHandle = IntPtr.Zero;
-                        try
-                        {
-                            mainHandle = proc.MainWindowHandle;
-                        }
-                        catch
-                        {
-                            mainHandle = IntPtr.Zero;
-                        }
-
-                        // Нет главного окна → считаем фоном, полностью игнорируем процесс
-                        if (mainHandle == IntPtr.Zero)
-                            return true;
-
-                        // Это не главное окно процесса → не учитываем
-                        if (hWnd != mainHandle)
-                            return true;
+                        hwnd = proc.MainWindowHandle;
+                        title = proc.MainWindowTitle ?? string.Empty;
+                    }
+                    catch
+                    {
+                        continue;
                     }
 
-                    // -------- стили окна --------
+                    // Нет главного окна или заголовка — считаем фоновым
+                    if (hwnd == IntPtr.Zero || string.IsNullOrWhiteSpace(title))
+                        continue;
+
+                    // Окно должно быть видимым и не cloaked
+                    if (!IsWindowVisible(hwnd))
+                        continue;
+                    if (IsWindowCloaked(hwnd))
+                        continue;
+                    if (IsShellLikeWindow(hwnd))
+                        continue;
+
+                    // --- стили окна ---
                     IntPtr stylePtr = IntPtr.Size == 8
-                        ? GetWindowLongPtr(hWnd, GWL_STYLE)
-                        : new IntPtr(GetWindowLong(hWnd, GWL_STYLE));
+                        ? GetWindowLongPtr(hwnd, GWL_STYLE)
+                        : new IntPtr(GetWindowLong(hwnd, GWL_STYLE));
                     IntPtr exStylePtr = IntPtr.Size == 8
-                        ? GetWindowLongPtr(hWnd, GWL_EXSTYLE)
-                        : new IntPtr(GetWindowLong(hWnd, GWL_EXSTYLE));
+                        ? GetWindowLongPtr(hwnd, GWL_EXSTYLE)
+                        : new IntPtr(GetWindowLong(hwnd, GWL_EXSTYLE));
 
                     uint style = (uint)stylePtr.ToInt64();
                     uint exStyle = (uint)exStylePtr.ToInt64();
 
-                    // TOOLWINDOW — служебное окно; но для Settings делаем исключение
+                    // TOOLWINDOW — служебное окно; для Settings делаем исключение
                     if ((exStyle & WS_EX_TOOLWINDOW) != 0 && !isSettingsApp)
-                        return true;
+                        continue;
 
-                    IntPtr owner = GetWindow(hWnd, GW_OWNER);
+                    IntPtr owner = GetWindow(hwnd, GW_OWNER);
                     if (owner != IntPtr.Zero && (exStyle & WS_EX_APPWINDOW) == 0 && !isSettingsApp)
-                        return true;
+                        continue;
 
                     bool hasCaption = (style & WS_CAPTION) != 0;
                     bool hasMinimize = (style & WS_MINIMIZEBOX) != 0;
                     if (!hasCaption && !hasMinimize && !isSettingsApp)
-                        return true;
+                        continue;
 
-                    // Отмечаем, что explorer найден
-                    if (string.Equals(processName, "explorer", StringComparison.OrdinalIgnoreCase))
-                        explorerFound = true;
-
+                    // --- путь к exe (для иконки и запуска) ---
                     string? exePath = null;
 
                     try
@@ -339,71 +317,16 @@ namespace PlankWin
                         }
                     }
 
-                    if (!result.ContainsKey(proc.Id))
-                    {
-                        result[proc.Id] = new TaskbarApp(processName, exePath, title, hWnd);
-                    }
+                    result.Add(new TaskbarApp(processName, exePath, title, hwnd));
                 }
                 catch
                 {
-                }
-
-                return true;
-            }, IntPtr.Zero);
-
-            // На всякий случай гарантируем наличие Explorer (File Explorer)
-            if (!explorerFound)
-            {
-                try
-                {
-                    var explorers = Process.GetProcessesByName("explorer");
-                    if (explorers.Length > 0)
-                    {
-                        var exProc = explorers[0];
-                        if (!result.ContainsKey(exProc.Id))
-                        {
-                            string? exePath = null;
-
-                            try
-                            {
-                                exePath = exProc.MainModule?.FileName;
-                            }
-                            catch
-                            {
-                                exePath = null;
-                            }
-
-                            if (string.IsNullOrEmpty(exePath))
-                            {
-                                try
-                                {
-                                    IntPtr hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, exProc.Id);
-                                    if (hProcess != IntPtr.Zero)
-                                    {
-                                        var sbPath = new StringBuilder(1024);
-                                        int size = sbPath.Capacity;
-                                        if (QueryFullProcessImageName(hProcess, 0, sbPath, ref size))
-                                        {
-                                            exePath = sbPath.ToString(0, size);
-                                        }
-                                        CloseHandle(hProcess);
-                                    }
-                                }
-                                catch
-                                {
-                                }
-                            }
-
-                            result[exProc.Id] = new TaskbarApp("explorer", exePath, "File Explorer", IntPtr.Zero);
-                        }
-                    }
-                }
-                catch
-                {
+                    // игнорируем отдельные упавшие процессы
                 }
             }
 
-            return result.Values;
+            foreach (var item in result)
+                yield return item;
         }
     }
 }
