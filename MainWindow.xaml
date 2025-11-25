@@ -1,0 +1,106 @@
+﻿<Window x:Class="PlankWin.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:PlankWin"
+        Title="PlankWin"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        Topmost="True"
+        Loaded="Window_Loaded">
+
+	<Window.Resources>
+		<!-- конвертер иконок -->
+		<local:AppIconConverter x:Key="AppIconConverter" />
+
+		<!-- стиль кнопки дока -->
+		<Style x:Key="DockButtonStyle" TargetType="Button">
+			<Setter Property="Background" Value="Transparent" />
+			<Setter Property="BorderThickness" Value="0" />
+			<Setter Property="Padding" Value="4" />
+			<Setter Property="Cursor" Value="Hand" />
+			<Setter Property="Template">
+				<Setter.Value>
+					<ControlTemplate TargetType="Button">
+						<Border x:Name="Outer"
+                                CornerRadius="10"
+                                Background="Transparent"
+                                Margin="2"
+                                RenderTransformOrigin="0.5,0.5">
+							<Border.RenderTransform>
+								<ScaleTransform ScaleX="1.0" ScaleY="1.0" />
+							</Border.RenderTransform>
+
+							<ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+						</Border>
+
+						<ControlTemplate.Triggers>
+							<!-- запущенное приложение -->
+							<DataTrigger Binding="{Binding IsRunning}" Value="True">
+								<Setter TargetName="Outer"
+                                        Property="Background"
+                                        Value="#40FFFFFF" />
+								<Setter TargetName="Outer"
+                                        Property="RenderTransform">
+									<Setter.Value>
+										<ScaleTransform ScaleX="1.2" ScaleY="1.2" />
+									</Setter.Value>
+								</Setter>
+							</DataTrigger>
+
+							<!-- hover -->
+							<Trigger Property="IsMouseOver" Value="True">
+								<Setter TargetName="Outer"
+                                        Property="RenderTransform">
+									<Setter.Value>
+										<ScaleTransform ScaleX="1.4" ScaleY="1.4" />
+									</Setter.Value>
+								</Setter>
+							</Trigger>
+						</ControlTemplate.Triggers>
+					</ControlTemplate>
+				</Setter.Value>
+			</Setter>
+		</Style>
+
+		<!-- вертикальная панель для левого/правого дока -->
+		<ItemsPanelTemplate x:Key="VerticalPanel">
+			<StackPanel Orientation="Vertical" />
+		</ItemsPanelTemplate>
+	</Window.Resources>
+
+	<Border Background="#CC222222"
+            CornerRadius="16"
+            Margin="8"
+            Padding="6">
+		<ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Disabled">
+			<ItemsControl x:Name="AppsItemsControl"
+                          ItemsSource="{Binding Apps}">
+				<!-- по умолчанию горизонтальный стек (снизу/сверху) -->
+				<ItemsControl.ItemsPanel>
+					<ItemsPanelTemplate>
+						<StackPanel Orientation="Horizontal" />
+					</ItemsPanelTemplate>
+				</ItemsControl.ItemsPanel>
+
+				<ItemsControl.ItemTemplate>
+					<DataTemplate>
+						<Button Tag="{Binding}"
+                                Click="OnAppButtonClick"
+                                ToolTip="{Binding Name}"
+                                Style="{StaticResource DockButtonStyle}">
+							<Image Width="32"
+                                   Height="32"
+                                   Stretch="Uniform"
+                                   Source="{Binding Converter={StaticResource AppIconConverter}}" />
+						</Button>
+					</DataTemplate>
+				</ItemsControl.ItemTemplate>
+			</ItemsControl>
+		</ScrollViewer>
+	</Border>
+</Window>
