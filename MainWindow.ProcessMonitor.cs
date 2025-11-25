@@ -1,4 +1,4 @@
-using System;
+п»їusing System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
@@ -22,10 +22,12 @@ namespace PlankWin
 
         private static bool MatchesTaskbarEntry(DockAppConfig app, TaskbarApp tb)
         {
+            // 1. РЇРІРЅРѕРµ СЃРѕРІРїР°РґРµРЅРёРµ РїРѕ ProcessName
             if (!string.IsNullOrWhiteSpace(app.ProcessName) &&
                 string.Equals(app.ProcessName, tb.ProcessName, StringComparison.OrdinalIgnoreCase))
                 return true;
 
+            // 2. РЎРѕРІРїР°РґРµРЅРёРµ РїРѕ РёРјРµРЅРё exe, РµСЃР»Рё РїСѓС‚СЊ СѓРєР°Р·Р°РЅ
             try
             {
                 if (!string.IsNullOrWhiteSpace(app.Path))
@@ -40,6 +42,7 @@ namespace PlankWin
             {
             }
 
+            // 3. РЎРѕРІРїР°РґРµРЅРёРµ РїРѕ РЅР°Р·РІР°РЅРёСЋ (РґР»СЏ РґРёРЅР°РјРёС‡РµСЃРєРёС… РїСЂРёР»РѕР¶РµРЅРёР№)
             if (!string.IsNullOrWhiteSpace(app.Name) &&
                 !string.IsNullOrWhiteSpace(tb.Title) &&
                 string.Equals(app.Name, tb.Title, StringComparison.OrdinalIgnoreCase))
@@ -52,7 +55,7 @@ namespace PlankWin
         {
             var taskbarApps = new List<TaskbarApp>(EnumerateTaskbarWindows());
 
-            // Обновляем IsRunning и WindowHandle для всех
+            // РћР±РЅРѕРІР»СЏРµРј IsRunning Рё WindowHandle РґР»СЏ Р·Р°РєСЂРµРїР»С‘РЅРЅС‹С… РїСЂРёР»РѕР¶РµРЅРёР№
             foreach (var app in Apps)
             {
                 bool running = false;
@@ -71,7 +74,7 @@ namespace PlankWin
                 app.IsRunning = running;
             }
 
-            // Удаляем динамические, которые больше не запущены
+            // РЈРґР°Р»СЏРµРј РґРёРЅР°РјРёС‡РµСЃРєРёРµ, РєРѕС‚РѕСЂС‹Рµ Р±РѕР»СЊС€Рµ РЅРµ Р·Р°РїСѓС‰РµРЅС‹
             for (int i = Apps.Count - 1; i >= 0; i--)
             {
                 var app = Apps[i];
@@ -94,9 +97,10 @@ namespace PlankWin
                 }
             }
 
-            // Добавляем динамические для новых приложений
+            // Р”РѕР±Р°РІР»СЏРµРј РґРёРЅР°РјРёС‡РµСЃРєРёРµ РґР»СЏ РЅРѕРІС‹С… РїСЂРёР»РѕР¶РµРЅРёР№
             foreach (var tb in taskbarApps)
             {
+                // 1. РЈР¶Рµ РїРѕРєСЂС‹С‚Рѕ Р·Р°РєСЂРµРїР»С‘РЅРЅС‹Рј РїСЂРёР»РѕР¶РµРЅРёРµРј
                 bool coveredByPinned = false;
                 foreach (var app in Apps)
                 {
@@ -110,6 +114,7 @@ namespace PlankWin
                 if (coveredByPinned)
                     continue;
 
+                // 2. РЈР¶Рµ РµСЃС‚СЊ РґРёРЅР°РјРёС‡РµСЃРєРёР№ СЌР»РµРјРµРЅС‚ РґР»СЏ СЌС‚РѕРіРѕ РїСЂРѕС†РµСЃСЃР°
                 bool alreadyDynamic = false;
                 foreach (var app in Apps)
                 {
@@ -132,6 +137,7 @@ namespace PlankWin
                 if (alreadyDynamic)
                     continue;
 
+                // 3. РќРѕРІС‹Р№ РґРёРЅР°РјРёС‡РµСЃРєРёР№ СЌР»РµРјРµРЅС‚
                 var dynApp = new DockAppConfig
                 {
                     Name = string.IsNullOrWhiteSpace(tb.Title) ? tb.ProcessName : tb.Title,
@@ -163,8 +169,8 @@ namespace PlankWin
         }
 
         /// <summary>
-        /// Проверяем, нужно ли игнорировать процесс по имени из настроек.
-        /// Сравнение без учета регистра, по подстроке.
+        /// РџСЂРѕРІРµСЂСЏРµРј, РЅСѓР¶РЅРѕ Р»Рё РёРіРЅРѕСЂРёСЂРѕРІР°С‚СЊ РїСЂРѕС†РµСЃСЃ РїРѕ РёРјРµРЅРё РёР· РЅР°СЃС‚СЂРѕРµРє.
+        /// РЎСЂР°РІРЅРµРЅРёРµ Р±РµР· СѓС‡С‘С‚Р° СЂРµРіРёСЃС‚СЂР°, РїРѕ РїРѕРґСЃС‚СЂРѕРєРµ.
         /// </summary>
         private bool ShouldIgnoreProcess(string processName)
         {
@@ -185,100 +191,122 @@ namespace PlankWin
         }
 
         /// <summary>
-        /// Перечисляет процессы, у которых есть главное окно (как в разделе Apps диспетчера задач).
-        /// Ориентируемся на Process.MainWindowHandle / MainWindowTitle, плюс проверка стилей окна.
+        /// РџРµСЂРµС‡РёСЃР»СЏРµС‚ РѕРєРЅР°, РєРѕС‚РѕСЂС‹Рµ РґРѕР»Р¶РЅС‹ Р±С‹С‚СЊ РЅР° РїР°РЅРµР»Рё Р·Р°РґР°С‡ (Рё РІ РґРѕРєРµ).
+        /// РСЃРїРѕР»СЊР·СѓРµРј EnumWindows + С„РёР»СЊС‚СЂР°С†РёСЋ РїРѕ СЃС‚РёР»СЏРј, РїР»СЋСЃ СЃРїРµС†-Р»РѕРіРёРєР° РґР»СЏ Nahimic.
         /// </summary>
         private IEnumerable<TaskbarApp> EnumerateTaskbarWindows()
         {
-            var result = new List<TaskbarApp>();
+            var result = new Dictionary<int, TaskbarApp>();
+            bool explorerFound = false;
 
-            Process[] processes;
-            try
-            {
-                processes = Process.GetProcesses();
-            }
-            catch
-            {
-                yield break;
-            }
-
-            int currentPid = Process.GetCurrentProcess().Id;
-
-            foreach (var proc in processes)
+            EnumWindows((hWnd, lParam) =>
             {
                 try
                 {
-                    if (proc.Id == currentPid)
-                        continue;
+                    // РќРµРІРёРґРёРјС‹Рµ Рё cloaked РѕРєРЅР° РЅРµ СЃС‡РёС‚Р°РµРј "РїСЂРёР»РѕР¶РµРЅРёСЏРјРё"
+                    if (!IsWindowVisible(hWnd))
+                        return true;
+
+                    if (IsWindowCloaked(hWnd))
+                        return true;
+
+                    if (IsShellLikeWindow(hWnd))
+                        return true;
+
+                    int textLen = GetWindowTextLength(hWnd);
+                    if (textLen == 0)
+                        return true;
+
+                    var sbTitle = new StringBuilder(textLen + 1);
+                    GetWindowText(hWnd, sbTitle, sbTitle.Capacity);
+                    string title = sbTitle.ToString();
+                    if (string.IsNullOrWhiteSpace(title))
+                        return true;
+
+                    GetWindowThreadProcessId(hWnd, out uint pid);
+                    if (pid == 0)
+                        return true;
+
+                    Process proc;
+                    try
+                    {
+                        proc = Process.GetProcessById((int)pid);
+                    }
+                    catch
+                    {
+                        return true;
+                    }
 
                     string processName = proc.ProcessName;
                     if (string.IsNullOrWhiteSpace(processName))
-                        continue;
+                        return true;
 
-                    // Игнор по настройкам (Nahimic и т.п.)
+                    // РРіРЅРѕСЂ РїРѕ СЃРїРёСЃРєСѓ РёР· РєРѕРЅС„РёРіР°
                     if (ShouldIgnoreProcess(processName))
-                        continue;
+                        return true;
 
                     string lower = processName.ToLowerInvariant();
 
-                    // Явно игнорируем служебную экранную клавиатуру / IME
+                    // РЇРІРЅРѕ РёРіРЅРѕСЂРёСЂСѓРµРј СЃР»СѓР¶РµР±РЅСѓСЋ СЌРєСЂР°РЅРЅСѓСЋ РєР»Р°РІРёР°С‚СѓСЂСѓ / IME
                     if (lower.Contains("textinputhost"))
-                        continue;
+                        return true;
 
-                    // Спец-флаг: это системное приложение "Настройки"
+                    // РЎРїРµС†-С„Р»Р°Рі: СЌС‚Рѕ СЃРёСЃС‚РµРјРЅРѕРµ РїСЂРёР»РѕР¶РµРЅРёРµ "РќР°СЃС‚СЂРѕР№РєРё"
                     bool isSettingsApp =
                         lower.Contains("systemsettings") ||
                         lower.Contains("immersivecontrolpanel");
 
-                    // Главное окно процесса (как его видит .NET / Task Manager)
-                    IntPtr hwnd;
-                    string title;
-
-                    try
+                    // -------- РЎРїРµС†-Р»РѕРіРёРєР° РґР»СЏ Nahimic --------
+                    bool isNahimic = lower.Contains("nahimic");
+                    if (isNahimic)
                     {
-                        hwnd = proc.MainWindowHandle;
-                        title = proc.MainWindowTitle ?? string.Empty;
+                        IntPtr mainHandle = IntPtr.Zero;
+                        try
+                        {
+                            mainHandle = proc.MainWindowHandle;
+                        }
+                        catch
+                        {
+                            mainHandle = IntPtr.Zero;
+                        }
+
+                        // РќРµС‚ РіР»Р°РІРЅРѕРіРѕ РѕРєРЅР° в†’ СЃС‡РёС‚Р°РµРј С„РѕРЅРѕРј, РїРѕР»РЅРѕСЃС‚СЊСЋ РёРіРЅРѕСЂРёСЂСѓРµРј РїСЂРѕС†РµСЃСЃ
+                        if (mainHandle == IntPtr.Zero)
+                            return true;
+
+                        // Р­С‚Рѕ РЅРµ РіР»Р°РІРЅРѕРµ РѕРєРЅРѕ РїСЂРѕС†РµСЃСЃР° в†’ РЅРµ СѓС‡РёС‚С‹РІР°РµРј
+                        if (hWnd != mainHandle)
+                            return true;
                     }
-                    catch
-                    {
-                        continue;
-                    }
 
-                    // Нет главного окна или заголовка — считаем фоновым процессом
-                    if (hwnd == IntPtr.Zero || string.IsNullOrWhiteSpace(title))
-                        continue;
-
-                    // Окно должно быть видимым и не быть shell-окном
-                    if (!IsWindowVisible(hwnd))
-                        continue;
-                    if (IsShellLikeWindow(hwnd))
-                        continue;
-
-                    // Стили окна — фильтр "как на панели задач"
+                    // -------- СЃС‚РёР»Рё РѕРєРЅР° --------
                     IntPtr stylePtr = IntPtr.Size == 8
-                        ? GetWindowLongPtr(hwnd, GWL_STYLE)
-                        : new IntPtr(GetWindowLong(hwnd, GWL_STYLE));
+                        ? GetWindowLongPtr(hWnd, GWL_STYLE)
+                        : new IntPtr(GetWindowLong(hWnd, GWL_STYLE));
                     IntPtr exStylePtr = IntPtr.Size == 8
-                        ? GetWindowLongPtr(hwnd, GWL_EXSTYLE)
-                        : new IntPtr(GetWindowLong(hwnd, GWL_EXSTYLE));
+                        ? GetWindowLongPtr(hWnd, GWL_EXSTYLE)
+                        : new IntPtr(GetWindowLong(hWnd, GWL_EXSTYLE));
 
                     uint style = (uint)stylePtr.ToInt64();
                     uint exStyle = (uint)exStylePtr.ToInt64();
 
-                    // TOOLWINDOW — служебное окно; но для Settings делаем исключение
+                    // TOOLWINDOW вЂ” СЃР»СѓР¶РµР±РЅРѕРµ РѕРєРЅРѕ; РЅРѕ РґР»СЏ Settings РґРµР»Р°РµРј РёСЃРєР»СЋС‡РµРЅРёРµ
                     if ((exStyle & WS_EX_TOOLWINDOW) != 0 && !isSettingsApp)
-                        continue;
+                        return true;
 
-                    IntPtr owner = GetWindow(hwnd, GW_OWNER);
+                    IntPtr owner = GetWindow(hWnd, GW_OWNER);
                     if (owner != IntPtr.Zero && (exStyle & WS_EX_APPWINDOW) == 0 && !isSettingsApp)
-                        continue;
+                        return true;
 
                     bool hasCaption = (style & WS_CAPTION) != 0;
                     bool hasMinimize = (style & WS_MINIMIZEBOX) != 0;
                     if (!hasCaption && !hasMinimize && !isSettingsApp)
-                        continue;
+                        return true;
 
-                    // Путь к exe (для иконки и запуска)
+                    // РћС‚РјРµС‡Р°РµРј, С‡С‚Рѕ explorer РЅР°Р№РґРµРЅ
+                    if (string.Equals(processName, "explorer", StringComparison.OrdinalIgnoreCase))
+                        explorerFound = true;
+
                     string? exePath = null;
 
                     try
@@ -311,16 +339,71 @@ namespace PlankWin
                         }
                     }
 
-                    result.Add(new TaskbarApp(processName, exePath, title, hwnd));
+                    if (!result.ContainsKey(proc.Id))
+                    {
+                        result[proc.Id] = new TaskbarApp(processName, exePath, title, hWnd);
+                    }
                 }
                 catch
                 {
-                    // игнорируем упавшие процессы
+                }
+
+                return true;
+            }, IntPtr.Zero);
+
+            // РќР° РІСЃСЏРєРёР№ СЃР»СѓС‡Р°Р№ РіР°СЂР°РЅС‚РёСЂСѓРµРј РЅР°Р»РёС‡РёРµ Explorer (File Explorer)
+            if (!explorerFound)
+            {
+                try
+                {
+                    var explorers = Process.GetProcessesByName("explorer");
+                    if (explorers.Length > 0)
+                    {
+                        var exProc = explorers[0];
+                        if (!result.ContainsKey(exProc.Id))
+                        {
+                            string? exePath = null;
+
+                            try
+                            {
+                                exePath = exProc.MainModule?.FileName;
+                            }
+                            catch
+                            {
+                                exePath = null;
+                            }
+
+                            if (string.IsNullOrEmpty(exePath))
+                            {
+                                try
+                                {
+                                    IntPtr hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, exProc.Id);
+                                    if (hProcess != IntPtr.Zero)
+                                    {
+                                        var sbPath = new StringBuilder(1024);
+                                        int size = sbPath.Capacity;
+                                        if (QueryFullProcessImageName(hProcess, 0, sbPath, ref size))
+                                        {
+                                            exePath = sbPath.ToString(0, size);
+                                        }
+                                        CloseHandle(hProcess);
+                                    }
+                                }
+                                catch
+                                {
+                                }
+                            }
+
+                            result[exProc.Id] = new TaskbarApp("explorer", exePath, "File Explorer", IntPtr.Zero);
+                        }
+                    }
+                }
+                catch
+                {
                 }
             }
 
-            foreach (var item in result)
-                yield return item;
+            return result.Values;
         }
     }
 }

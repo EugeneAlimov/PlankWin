@@ -6,6 +6,8 @@ namespace PlankWin
 {
     public partial class MainWindow
     {
+        // ---------- —труктуры ----------
+
         [StructLayout(LayoutKind.Sequential)]
         private struct POINT
         {
@@ -32,6 +34,8 @@ namespace PlankWin
             public int Right;
             public int Bottom;
         }
+
+        // ---------- user32.dll ----------
 
         [DllImport("user32.dll")]
         private static extern bool GetCursorPos(out POINT lpPoint);
@@ -91,6 +95,8 @@ namespace PlankWin
         [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr", SetLastError = true)]
         private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
 
+        // ---------- kernel32.dll ----------
+
         private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
@@ -108,5 +114,39 @@ namespace PlankWin
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr hObject);
+
+        // ---------- dwmapi.dll (дл€ cloaked окон) ----------
+
+        private const int DWMWA_CLOAKED = 14;
+
+        [DllImport("dwmapi.dll", PreserveSig = true)]
+        private static extern int DwmGetWindowAttribute(
+            IntPtr hwnd,
+            int dwAttribute,
+            out int pvAttribute,
+            int cbAttribute);
+
+        /// <summary>
+        /// ќкно "cloaked" (спр€тано DWM, как у UWP-приложений, свернутых в фон).
+        /// </summary>
+        private static bool IsWindowCloaked(IntPtr hWnd)
+        {
+            try
+            {
+                int cloaked;
+                int hr = DwmGetWindowAttribute(
+                    hWnd,
+                    DWMWA_CLOAKED,
+                    out cloaked,
+                    Marshal.SizeOf<int>());
+
+                return hr == 0 && cloaked != 0;
+            }
+            catch
+            {
+                // Ќа вс€кий случай Ч если dwmapi недоступна, считаем, что окно не cloaked.
+                return false;
+            }
+        }
     }
 }

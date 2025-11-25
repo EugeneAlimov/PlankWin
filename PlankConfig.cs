@@ -12,19 +12,23 @@ namespace PlankWin
         Right
     }
 
-    public class DockSettings
+    public sealed class DockSettings
     {
+        /// <summary>Положение дока на экране.</summary>
         public DockPosition Position { get; set; } = DockPosition.Bottom;
 
-        public bool AutoHide { get; set; } = true;
-
+        /// <summary>Высота дока при размещении сверху/снизу.</summary>
         public double Height { get; set; } = 72;
 
+        /// <summary>Ширина дока при размещении слева/справа.</summary>
         public double Width { get; set; } = 72;
 
+        /// <summary>Автоскрытие дока.</summary>
+        public bool AutoHide { get; set; } = true;
+
         /// <summary>
-        /// Имена процессов, которые нужно игнорировать в доке.
-        /// Сравнение без учета регистра, подстрока (т.е. "nahimic" поймает и "NahimicSvc").
+        /// Имена процессов, которые нужно игнорировать (не показывать в доке).
+        /// Сравнение без учёта регистра, по подстроке.
         /// </summary>
         public string[] IgnoreProcessNames { get; set; } = Array.Empty<string>();
     }
@@ -37,16 +41,18 @@ namespace PlankWin
         {
             var path = Path.Combine(baseDir, ConfigFileName);
 
+            // Нет файла — создаём дефолтный.
             if (!File.Exists(path))
             {
                 var settings = new DockSettings();
-                Save(path, settings);
+                TrySave(path, settings);
                 return settings;
             }
 
             try
             {
                 var json = File.ReadAllText(path);
+
                 var settings = JsonSerializer.Deserialize<DockSettings>(
                                    json,
                                    new JsonSerializerOptions
@@ -55,7 +61,6 @@ namespace PlankWin
                                    })
                                ?? new DockSettings();
 
-                // На случай старого файла без IgnoreProcessNames
                 if (settings.IgnoreProcessNames == null)
                     settings.IgnoreProcessNames = Array.Empty<string>();
 
@@ -63,23 +68,34 @@ namespace PlankWin
             }
             catch
             {
-                // Если конфиг повреждён — создаём новый по умолчанию
-                var settings = new DockSettings();
-                Save(path, settings);
-                return settings;
+                // Конфиг битый или старого формата — не ломаем док, просто берём дефолт.
+                return new DockSettings();
             }
         }
 
-        public static void Save(string path, DockSettings settings)
+        public static void Save(string baseDir, DockSettings settings)
         {
-            var json = JsonSerializer.Serialize(
-                settings,
-                new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                });
+            var path = Path.Combine(baseDir, ConfigFileName);
+            TrySave(path, settings);
+        }
 
-            File.WriteAllText(path, json);
+        private static void TrySave(string path, DockSettings settings)
+        {
+            try
+            {
+                var json = JsonSerializer.Serialize(
+                    settings,
+                    new JsonSerializerOptions
+                    {
+                        WriteIndented = true
+                    });
+
+                File.WriteAllText(path, json);
+            }
+            catch
+            {
+                // Тихо игнорируем — это не критично для работы дока.
+            }
         }
     }
 }
