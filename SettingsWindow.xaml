@@ -1,0 +1,283 @@
+﻿<Window
+    x:Class="PlankWin.SettingsWindow"
+    x:Name="SettingsWin"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:PlankWin"
+    Title="Настройки PlankWin" 
+    
+    Width="450" Height="580"
+    MinWidth="450" MaxWidth="450"
+    MinHeight="580" MaxHeight="580"
+    
+    WindowStartupLocation="CenterScreen" Topmost="True"
+    
+    WindowStyle="SingleBorderWindow" 
+    ResizeMode="CanMinimize" 
+    AllowsTransparency="False" 
+    
+    Background="{DynamicResource MenuBgBrush}" 
+    FontFamily="Segoe UI">
+
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="50" ResizeBorderThickness="0" GlassFrameThickness="1" UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Window.Resources>
+        <local:HexToBrushConverter x:Key="HexToBrushConverter" />
+    </Window.Resources>
+
+    <Grid Margin="0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="50" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Background="Transparent" 
+                MouseLeftButtonDown="TitleBar_MouseLeftButtonDown"
+                MouseLeftButtonUp="TitleBar_MouseLeftButtonUp">
+
+            <Button WindowChrome.IsHitTestVisibleInChrome="True"
+                    HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,15,0"
+                    Content="&#xE8BB;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"
+                    Width="30" Height="30" Background="Transparent" BorderThickness="0" 
+                    Foreground="{DynamicResource MenuTextBrush}" Cursor="Hand"
+                    Click="BtnClose_Click">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="Transparent" CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#1A000000" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#33000000" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+        </Grid>
+
+        <Grid Grid.Row="1" Margin="10,0,10,10">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TabControl Grid.Row="0" Margin="5" Background="Transparent" BorderBrush="{DynamicResource MenuBorderBrush}">
+
+                <TabItem Header="Поведение и Положение">
+                    <StackPanel Margin="15">
+                        <TextBlock Text="Главные настройки" FontWeight="Bold" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,10"/>
+                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="Запускать вместе с Windows" IsChecked="{Binding RunAtStartup}" Margin="0,0,0,8"/>
+                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="Умное скрытие (IntelliHide)" IsChecked="{Binding AutoHide}" Margin="0,0,0,8"/>
+                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="Резервировать место на экране" IsChecked="{Binding ReserveScreenSpace}" Margin="0,0,0,15"/>
+
+                        <TextBlock Text="Геометрия" FontWeight="Bold" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,10"/>
+                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="Летающая панель (отступ от края)" IsChecked="{Binding IsFloating}" Margin="0,0,0,8"/>
+                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="Адаптивный размер (стягивание)" IsChecked="{Binding IsAdaptive}" Margin="0,0,0,15"/>
+
+                        <TextBlock Text="Расположение панели:" Margin="0,0,0,5" Foreground="{DynamicResource MenuTextBrush}"/>
+                        <ComboBox x:Name="CmbPosition" SelectedItem="{Binding Position}" Margin="0,0,0,10"/>
+
+                        <TextBlock Text="Выравнивание значков:" Margin="0,0,0,5" Foreground="{DynamicResource MenuTextBrush}"/>
+                        <ComboBox x:Name="CmbAlignment" SelectedItem="{Binding Alignment}" Margin="0,0,0,10"/>
+                    </StackPanel>
+                </TabItem>
+
+                <TabItem Header="Стиль и Оформление">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="15">
+                            <TextBlock Text="Размеры (пиксели)" FontWeight="Bold" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,10"/>
+
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="30"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Толщина панели:" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                                <Slider Grid.Column="1" Minimum="20" Maximum="128" Value="{Binding Thickness}" IsSnapToTickEnabled="True" TickFrequency="1" VerticalAlignment="Center" Margin="10,0"/>
+                                <TextBlock Grid.Column="2" Text="{Binding Thickness}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+                            </Grid>
+
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="30"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Размер иконок:" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                                <Slider Grid.Column="1" Minimum="16" Maximum="128" Value="{Binding IconSize}" IsSnapToTickEnabled="True" TickFrequency="1" VerticalAlignment="Center" Margin="10,0"/>
+                                <TextBlock Grid.Column="2" Text="{Binding IconSize}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+                            </Grid>
+
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="30"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Зазор между иконками:" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                                <Slider Grid.Column="1" Minimum="0" Maximum="40" Value="{Binding IconMargin}" IsSnapToTickEnabled="True" TickFrequency="1" VerticalAlignment="Center" Margin="10,0"/>
+                                <TextBlock Grid.Column="2" Text="{Binding IconMargin}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+                            </Grid>
+
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="30"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Отступ от экрана:" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                                <Slider Grid.Column="1" Minimum="0" Maximum="50" Value="{Binding EdgeMargin}" IsSnapToTickEnabled="True" TickFrequency="1" VerticalAlignment="Center" Margin="10,0"/>
+                                <TextBlock Grid.Column="2" Text="{Binding EdgeMargin}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+                            </Grid>
+
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="30"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Внутренний зазор:" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                                <Slider Grid.Column="1" Minimum="0" Maximum="40" Value="{Binding PanelPadding}" IsSnapToTickEnabled="True" TickFrequency="1" VerticalAlignment="Center" Margin="10,0"/>
+                                <TextBlock Grid.Column="2" Text="{Binding PanelPadding}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+                            </Grid>
+
+                            <Grid Margin="0,0,0,15">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="30"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Скругление углов:" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                                <Slider Grid.Column="1" Minimum="0" Maximum="64" Value="{Binding PanelCornerRadius}" IsSnapToTickEnabled="True" TickFrequency="1" VerticalAlignment="Center" Margin="10,0"/>
+                                <TextBlock Grid.Column="2" Text="{Binding PanelCornerRadius}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+                            </Grid>
+
+                            <TextBlock Text="Цвета (HEX)" FontWeight="Bold" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,10"/>
+
+                            <Grid Margin="0,0,0,15">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Цвет фона (RGB):" VerticalAlignment="Top" Margin="0,5,0,0" Foreground="{DynamicResource MenuTextBrush}"/>
+
+                                <StackPanel Grid.Column="1">
+                                    <Border Height="25" CornerRadius="3" BorderBrush="{DynamicResource MenuBorderBrush}" BorderThickness="1" Margin="0,0,0,8">
+                                        <Border.Background>
+                                            <MultiBinding Converter="{StaticResource HexToBrushConverter}">
+                                                <Binding Path="BackgroundColor" />
+                                                <Binding Source="1.0" />
+                                            </MultiBinding>
+                                        </Border.Background>
+                                    </Border>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="15"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="30"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <TextBlock Text="R" Foreground="#E53935" FontWeight="Bold" VerticalAlignment="Center" Grid.Row="0"/>
+                                        <Slider x:Name="SliderR" Grid.Column="1" Grid.Row="0" Minimum="0" Maximum="255" ValueChanged="SliderRGB_ValueChanged" IsSnapToTickEnabled="True" TickFrequency="1" Margin="5,2"/>
+                                        <TextBlock Text="{Binding Value, ElementName=SliderR}" Grid.Column="2" Grid.Row="0" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+
+                                        <TextBlock Text="G" Foreground="#43A047" FontWeight="Bold" VerticalAlignment="Center" Grid.Row="1"/>
+                                        <Slider x:Name="SliderG" Grid.Column="1" Grid.Row="1" Minimum="0" Maximum="255" ValueChanged="SliderRGB_ValueChanged" IsSnapToTickEnabled="True" TickFrequency="1" Margin="5,2"/>
+                                        <TextBlock Text="{Binding Value, ElementName=SliderG}" Grid.Column="2" Grid.Row="1" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+
+                                        <TextBlock Text="B" Foreground="#1E88E5" FontWeight="Bold" VerticalAlignment="Center" Grid.Row="2"/>
+                                        <Slider x:Name="SliderB" Grid.Column="1" Grid.Row="2" Minimum="0" Maximum="255" ValueChanged="SliderRGB_ValueChanged" IsSnapToTickEnabled="True" TickFrequency="1" Margin="5,2"/>
+                                        <TextBlock Text="{Binding Value, ElementName=SliderB}" Grid.Column="2" Grid.Row="2" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Grid>
+
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="35"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Прозрачность:" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                                <Slider Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding BackgroundOpacity, UpdateSourceTrigger=PropertyChanged}" TickFrequency="0.05" IsSnapToTickEnabled="True" VerticalAlignment="Center" Margin="10,0"/>
+                                <TextBlock Grid.Column="2" Text="{Binding BackgroundOpacity, StringFormat=N2}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+                            </Grid>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <TabItem Header="Исключения">
+                    <StackPanel Margin="15">
+                        <TextBlock Text="Фильтр приложений" FontWeight="Bold" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,10"/>
+                        <TextBlock Text="Отметьте тумблером приложения, которые нужно скрыть с панели." Foreground="{DynamicResource MenuTextBrush}" Opacity="0.8" Margin="0,0,0,5"/>
+                        <TextBlock Text="(Здесь показаны уже скрытые программы, а также все запущенные сейчас)" Foreground="{DynamicResource MenuTextBrush}" Opacity="0.6" FontStyle="Italic" Margin="0,0,0,15" TextWrapping="Wrap"/>
+
+                        <ListBox ItemsSource="{Binding FilterItems, ElementName=SettingsWin}" Height="280" Margin="0,0,0,15" 
+                                 BorderBrush="{DynamicResource MenuBorderBrush}" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,4" Width="340">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" IsChecked="{Binding IsIgnored}" VerticalAlignment="Center" Margin="5,0,10,0"/>
+
+                                        <TextBlock Grid.Column="1" Text="{Binding ProcessName}" VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{DynamicResource MenuTextBrush}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                                            <Setter Property="FontWeight" Value="Bold"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+
+                                        <Border Grid.Column="2" Background="#1A4CAF50" BorderBrush="#4CAF50" BorderThickness="1" CornerRadius="4" Padding="6,2">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock Text="Запущено" FontSize="10" Foreground="#4CAF50" FontWeight="Bold"/>
+                                        </Border>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <Button Content="Обновить список запущенных окон" Click="BtnRefreshFilter_Click" HorizontalAlignment="Right" Padding="15,5" 
+                                Background="{DynamicResource MenuBgBrush}" BorderBrush="{DynamicResource MenuBorderBrush}" Foreground="{DynamicResource MenuTextBrush}"/>
+                    </StackPanel>
+                </TabItem>
+            </TabControl>
+
+            <Button Grid.Row="1" Content="Готово" Width="100" Height="30" Margin="0,0,5,5" HorizontalAlignment="Right" Click="BtnClose_Click"
+                    Background="{DynamicResource MenuBgBrush}" BorderBrush="{DynamicResource MenuBorderBrush}" Foreground="{DynamicResource MenuTextBrush}"/>
+        </Grid>
+    </Grid>
+</Window>

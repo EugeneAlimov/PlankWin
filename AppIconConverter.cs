@@ -1,444 +1,264 @@
 ﻿using System;
-using System.Globalization;
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Interop;
 using System.Windows.Media.Imaging;
 
-namespace PlankWin;
-
-public class AppIconConverter : IValueConverter
+namespace PlankWin
 {
-    public object? Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    public class AppIconConverter : IValueConverter
     {
-        if (value is not DockAppConfig app)
-            return DependencyProperty.UnsetValue;
-
-        // -------- 1. Путь к реальному файлу (exe/dll), если он вообще есть --------
-        string? resolvedFile = ResolveExistingPath(app.Path);
-
-        // 1.1. Пробуем ExtractIcon по exe
-        if (!string.IsNullOrWhiteSpace(resolvedFile))
+        private static bool IsUwpWrapper(IntPtr hwnd)
         {
-            var fromExe = TryExtractIcon(resolvedFile!);
-            if (fromExe != null)
-                return fromExe;
+            string className = Win32Helper.GetWindowClassName(hwnd);
+            return className == "ApplicationFrameWindow" || className == "Windows.UI.Core.CoreWindow";
         }
 
-        // -------- 2. Пользовательская иконка из конфигурации (icons/*.png и т.п.) --------
-        if (!string.IsNullOrWhiteSpace(app.Icon))
+        private static IntPtr GetRealUwpWindow(IntPtr hwnd)
         {
-            var iconPath = app.Icon!;
-            if (!Path.IsPathRooted(iconPath))
-                iconPath = Path.Combine(AppContext.BaseDirectory, iconPath);
-
-            if (File.Exists(iconPath))
+            string className = Win32Helper.GetWindowClassName(hwnd);
+            if (className == "ApplicationFrameWindow")
             {
-                try
+                Win32Helper.GetWindowThreadProcessId(hwnd, out uint parentPid);
+                IntPtr realCoreWindow = IntPtr.Zero;
+                Win32Helper.EnumChildWindows(hwnd, (hChild, lParam) =>
                 {
-                    var bmp = new BitmapImage();
-                    bmp.BeginInit();
-                    bmp.UriSource = new Uri(iconPath, UriKind.Absolute);
-                    bmp.CacheOption = BitmapCacheOption.OnLoad;
-                    bmp.EndInit();
-                    bmp.Freeze();
-                    return bmp;
-                }
-                catch
-                {
-                    // если тут упало — идём дальше
-                }
-            }
-        }
-
-        // -------- 3. Иконка самого окна (для динамических приложений, Settings и т.п.) --------
-        if (app.WindowHandle != IntPtr.Zero)
-        {
-            var fromWindow = GetWindowIcon(app.WindowHandle);
-            if (fromWindow != null)
-                return fromWindow;
-        }
-
-        // -------- 4. Спец-хак для Paint (UWP-версия) --------
-        if (IsPaintApp(app))
-        {
-            var fromUwp = TryGetUwpPaintIcon();
-            if (fromUwp != null)
-                return fromUwp;
-        }
-
-        // -------- 5. Спец-хак для Settings --------
-        if (IsSettingsApp(app))
-        {
-            var fromSettings = TryGetSettingsIcon();
-            if (fromSettings != null)
-                return fromSettings;
-        }
-
-        // -------- 6. Системная иконка по файлу / типу --------
-        if (!string.IsNullOrWhiteSpace(app.Path))
-        {
-            // если мы уже нашли реальный файл — используем его
-            if (resolvedFile != null)
-            {
-                var bsReal = GetFileIcon(resolvedFile, fileExists: true);
-                if (bsReal != null)
-                    return bsReal;
-            }
-
-            // не нашли реальный файл — пробуем по "типу" (расширению или алиасу)
-            var bsByType = GetFileIcon(app.Path, fileExists: false);
-            if (bsByType != null)
-                return bsByType;
-        }
-
-        return DependencyProperty.UnsetValue;
-    }
-
-    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
-        => throw new NotSupportedException();
-
-    // ---------- Вспомогательные методы ----------
-
-    /// <summary>
-    /// Пробуем разрулить путь к реальному файлу:
-    /// - абсолютный путь
-    /// - рядом с PlankWin.exe
-    /// - в системной директории (System32)
-    /// </summary>
-    private static string? ResolveExistingPath(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-            return null;
-
-        try
-        {
-            if (Path.IsPathRooted(path))
-            {
-                if (File.Exists(path))
-                    return path;
-            }
-            else
-            {
-                // 1) рядом с PlankWin.exe
-                var candidate = Path.Combine(AppContext.BaseDirectory, path);
-                if (File.Exists(candidate))
-                    return candidate;
-
-                // 2) System32
-                var sysDir = Environment.SystemDirectory;
-                var sysCandidate = Path.Combine(sysDir, path);
-                if (File.Exists(sysCandidate))
-                    return sysCandidate;
-            }
-        }
-        catch
-        {
-            // игнорируем
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Определяем, что это Paint (по имени процесса, имени exe или имени приложения).
-    /// </summary>
-    private static bool IsPaintApp(DockAppConfig app)
-    {
-        try
-        {
-            if (!string.IsNullOrWhiteSpace(app.ProcessName) &&
-                app.ProcessName.Equals("mspaint", StringComparison.OrdinalIgnoreCase))
-                return true;
-
-            if (!string.IsNullOrWhiteSpace(app.Path))
-            {
-                var fn = Path.GetFileNameWithoutExtension(app.Path);
-                if (!string.IsNullOrWhiteSpace(fn) &&
-                    fn.Equals("mspaint", StringComparison.OrdinalIgnoreCase))
+                    Win32Helper.GetWindowThreadProcessId(hChild, out uint childPid);
+                    if (childPid != parentPid) { realCoreWindow = hChild; return false; }
                     return true;
+                }, IntPtr.Zero);
+                if (realCoreWindow != IntPtr.Zero) return realCoreWindow;
             }
-
-            if (!string.IsNullOrWhiteSpace(app.Name) &&
-                app.Name.IndexOf("paint", StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
-        }
-        catch
-        {
+            return hwnd;
         }
 
-        return false;
-    }
-
-    /// <summary>
-    /// Определяем, что это Settings (по имени процесса, exe или имени приложения).
-    /// </summary>
-    private static bool IsSettingsApp(DockAppConfig app)
-    {
-        try
+        private static IntPtr GetLiveIcon(IntPtr hwnd)
         {
-            if (!string.IsNullOrWhiteSpace(app.ProcessName))
-            {
-                var lower = app.ProcessName.ToLowerInvariant();
-                if (lower.Contains("systemsettings") || lower.Contains("immersivecontrolpanel"))
-                    return true;
-            }
-
-            if (!string.IsNullOrWhiteSpace(app.Path))
-            {
-                var fn = Path.GetFileNameWithoutExtension(app.Path);
-                if (!string.IsNullOrWhiteSpace(fn))
-                {
-                    var lowerFn = fn.ToLowerInvariant();
-                    if (lowerFn.Contains("systemsettings") || lowerFn.Contains("immersivecontrolpanel"))
-                        return true;
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(app.Name) &&
-                app.Name.IndexOf("settings", StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
-        }
-        catch
-        {
+            IntPtr result;
+            Win32Helper.SendMessageTimeout(hwnd, Win32Helper.WM_GETICON, new IntPtr(Win32Helper.ICON_BIG), IntPtr.Zero, Win32Helper.SMTO_ABORTIFHUNG, 50, out result);
+            if (result != IntPtr.Zero) return result;
+            Win32Helper.SendMessageTimeout(hwnd, Win32Helper.WM_GETICON, new IntPtr(Win32Helper.ICON_SMALL2), IntPtr.Zero, Win32Helper.SMTO_ABORTIFHUNG, 50, out result);
+            if (result != IntPtr.Zero) return result;
+            return Win32Helper.GetClassLongPtr(hwnd, Win32Helper.GCLP_HICON);
         }
 
-        return false;
-    }
-
-    /// <summary>
-    /// Пробуем вытащить иконку UWP Paint по алиасу в %LocalAppData%\Microsoft\WindowsApps.
-    /// </summary>
-    private static BitmapSource? TryGetUwpPaintIcon()
-    {
-        try
+        private static string GetProcessExecutablePath(IntPtr hwnd)
         {
-            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var aliasPath = Path.Combine(
-                localAppData,
-                "Microsoft",
-                "WindowsApps",
-                "Microsoft.Paint_8wekyb3d8bbwe");
-
-            if (!File.Exists(aliasPath))
-                return null;
-
-            // Сначала пробуем ExtractIcon
-            var fromExe = TryExtractIcon(aliasPath);
-            if (fromExe != null)
-                return fromExe;
-
-            // Если не получилось — пробуем SHGetFileInfo
-            var fromFile = GetFileIcon(aliasPath, fileExists: true);
-            return fromFile;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Пробуем вытащить иконку Settings из SystemSettings.exe в ImmersiveControlPanel.
-    /// </summary>
-    private static BitmapSource? TryGetSettingsIcon()
-    {
-        try
-        {
-            var winDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-            var settingsExe = Path.Combine(winDir, "ImmersiveControlPanel", "SystemSettings.exe");
-
-            if (!File.Exists(settingsExe))
-                return null;
-
-            var fromExe = TryExtractIcon(settingsExe);
-            if (fromExe != null)
-                return fromExe;
-
-            var fromFile = GetFileIcon(settingsExe, fileExists: true);
-            return fromFile;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    // --- ExtractIcon ---
-
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    private static extern IntPtr ExtractIcon(IntPtr hInst, string lpszFile, int nIconIndex);
-
-    /// <summary>
-    /// Более надёжное извлечение иконки из exe через ExtractIcon.
-    /// </summary>
-    private static BitmapSource? TryExtractIcon(string exePath)
-    {
-        try
-        {
-            IntPtr hIcon = ExtractIcon(IntPtr.Zero, exePath, 0);
-            // Возвращаемое значение 1 — "нет иконки"
-            if (hIcon != IntPtr.Zero && hIcon != new IntPtr(1))
-            {
-                try
-                {
-                    var bs = Imaging.CreateBitmapSourceFromHIcon(
-                        hIcon,
-                        Int32Rect.Empty,
-                        BitmapSizeOptions.FromEmptyOptions());
-                    bs.Freeze();
-                    return bs;
-                }
-                finally
-                {
-                    DestroyIcon(hIcon);
-                }
-            }
-        }
-        catch
-        {
-        }
-
-        return null;
-    }
-
-    // --- Иконка окна по hWnd ---
-
-    private const uint WM_GETICON = 0x007F;
-    private const int ICON_BIG = 1;
-    private const int ICON_SMALL = 0;
-    private const int GCL_HICON = -14;
-    private const int GCL_HICONSM = -34;
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
-
-    [DllImport("user32.dll", EntryPoint = "GetClassLongPtr", SetLastError = true)]
-    private static extern IntPtr GetClassLongPtr64(IntPtr hWnd, int nIndex);
-
-    [DllImport("user32.dll", EntryPoint = "GetClassLong", SetLastError = true)]
-    private static extern IntPtr GetClassLongPtr32(IntPtr hWnd, int nIndex);
-
-    private static IntPtr GetClassLongPtr(IntPtr hWnd, int nIndex)
-    {
-        if (IntPtr.Size == 8)
-            return GetClassLongPtr64(hWnd, nIndex);
-        return GetClassLongPtr32(hWnd, nIndex);
-    }
-
-    private static BitmapSource? GetWindowIcon(IntPtr hWnd)
-    {
-        try
-        {
-            IntPtr hIcon = SendMessage(hWnd, WM_GETICON, new IntPtr(ICON_BIG), IntPtr.Zero);
-            if (hIcon == IntPtr.Zero)
-                hIcon = SendMessage(hWnd, WM_GETICON, new IntPtr(ICON_SMALL), IntPtr.Zero);
-            if (hIcon == IntPtr.Zero)
-                hIcon = GetClassLongPtr(hWnd, GCL_HICON);
-            if (hIcon == IntPtr.Zero)
-                hIcon = GetClassLongPtr(hWnd, GCL_HICONSM);
-
-            if (hIcon == IntPtr.Zero)
-                return null;
-
+            Win32Helper.GetWindowThreadProcessId(hwnd, out uint pid);
+            if (pid == 0) return string.Empty;
+            IntPtr hProcess = Win32Helper.OpenProcess(0x1000, false, pid);
+            if (hProcess == IntPtr.Zero) return string.Empty;
             try
             {
-                var bs = Imaging.CreateBitmapSourceFromHIcon(
-                    hIcon,
-                    Int32Rect.Empty,
-                    BitmapSizeOptions.FromEmptyOptions());
-                bs.Freeze();
-                return bs;
+                int capacity = 1024;
+                var sb = new System.Text.StringBuilder(capacity);
+                if (Win32Helper.QueryFullProcessImageName(hProcess, 0, sb, ref capacity)) return sb.ToString();
             }
-            finally
+            finally { Win32Helper.CloseHandle(hProcess); }
+            return string.Empty;
+        }
+
+        private static string GetAumidFromPropertyStore(IntPtr hwnd)
+        {
+            try
             {
-                DestroyIcon(hIcon);
+                Guid iid = typeof(Win32Helper.IPropertyStore).GUID;
+                int hr = Win32Helper.SHGetPropertyStoreForWindow(hwnd, ref iid, out Win32Helper.IPropertyStore propStore);
+                if (hr == 0 && propStore != null)
+                {
+                    Win32Helper.PROPERTYKEY pkey = new Win32Helper.PROPERTYKEY { fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), pid = 5 };
+                    Win32Helper.PROPVARIANT pv = new Win32Helper.PROPVARIANT();
+                    hr = propStore.GetValue(ref pkey, out pv);
+                    if (hr == 0 && pv.vt == 31)
+                    {
+                        string aumid = Marshal.PtrToStringUni(pv.pwszVal) ?? string.Empty;
+                        Win32Helper.PropVariantClear(ref pv);
+                        return aumid;
+                    }
+                }
             }
+            catch { }
+            return string.Empty;
         }
-        catch
+
+        private static string GetAumidFromProcess(IntPtr hwnd)
         {
+            Win32Helper.GetWindowThreadProcessId(hwnd, out uint pid);
+            if (pid == 0) return string.Empty;
+            IntPtr hProcess = Win32Helper.OpenProcess(0x1000, false, pid);
+            if (hProcess == IntPtr.Zero) return string.Empty;
+            try
+            {
+                uint length = 0;
+                Win32Helper.GetApplicationUserModelId(hProcess, ref length, null!);
+                if (length > 0)
+                {
+                    var sb = new System.Text.StringBuilder((int)length);
+                    if (Win32Helper.GetApplicationUserModelId(hProcess, ref length, sb) == 0) return sb.ToString();
+                }
+            }
+            finally { Win32Helper.CloseHandle(hProcess); }
+            return string.Empty;
+        }
+
+        private static string GetAumidRobust(IntPtr hwnd, IntPtr realHwnd)
+        {
+            string aumid = GetAumidFromPropertyStore(hwnd);
+            if (!string.IsNullOrEmpty(aumid)) return aumid;
+
+            if (realHwnd != hwnd && realHwnd != IntPtr.Zero)
+            {
+                aumid = GetAumidFromPropertyStore(realHwnd);
+                if (!string.IsNullOrEmpty(aumid)) return aumid;
+
+                aumid = GetAumidFromProcess(realHwnd);
+                if (!string.IsNullOrEmpty(aumid)) return aumid;
+            }
+            return GetAumidFromProcess(hwnd);
+        }
+
+        private static BitmapSource? ExtractIconFromPath(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return null;
+
+            IntPtr pidl = IntPtr.Zero;
+            if (Win32Helper.SHParseDisplayName(path, IntPtr.Zero, out pidl, 0, out _) == 0 && pidl != IntPtr.Zero)
+            {
+                Win32Helper.SHFILEINFO shinfo = new Win32Helper.SHFILEINFO();
+                IntPtr res = Win32Helper.SHGetFileInfo(pidl, 0, out shinfo, (uint)Marshal.SizeOf(shinfo), Win32Helper.SHGFI_PIDL | Win32Helper.SHGFI_ICON | Win32Helper.SHGFI_LARGEICON);
+                Win32Helper.ILFree(pidl);
+                if (res != IntPtr.Zero && shinfo.hIcon != IntPtr.Zero)
+                {
+                    var img = Imaging.CreateBitmapSourceFromHIcon(shinfo.hIcon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                    img.Freeze();
+                    Win32Helper.DestroyIcon(shinfo.hIcon);
+                    return img;
+                }
+            }
+
+            Guid iid = typeof(Win32Helper.IShellItemImageFactory).GUID;
+            int hr = Win32Helper.SHCreateItemFromParsingName(path, IntPtr.Zero, iid, out Win32Helper.IShellItemImageFactory factory);
+            if (hr == 0 && factory != null)
+            {
+                int imgHr = factory.GetImage(new Win32Helper.SIZE(256, 256), Win32Helper.SIIGBF.SIIGBF_RESIZETOFIT | Win32Helper.SIIGBF.SIIGBF_ICONONLY, out IntPtr hBitmap);
+                if (imgHr == 0 && hBitmap != IntPtr.Zero)
+                {
+                    var img = Imaging.CreateBitmapSourceFromHBitmap(hBitmap, IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                    img.Freeze();
+                    Win32Helper.DeleteObject(hBitmap);
+                    return img;
+                }
+            }
+
+            Win32Helper.SHFILEINFO fallbackInfo = new Win32Helper.SHFILEINFO();
+            IntPtr fallbackRes = Win32Helper.SHGetFileInfo(path, 0, out fallbackInfo, (uint)Marshal.SizeOf(fallbackInfo), Win32Helper.SHGFI_ICON | Win32Helper.SHGFI_LARGEICON);
+            if (fallbackRes != IntPtr.Zero && fallbackInfo.hIcon != IntPtr.Zero)
+            {
+                var img = Imaging.CreateBitmapSourceFromHIcon(fallbackInfo.hIcon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                img.Freeze();
+                Win32Helper.DestroyIcon(fallbackInfo.hIcon);
+                return img;
+            }
+
             return null;
         }
-    }
 
-    // --- SHGetFileInfo ---
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct SHFILEINFO
-    {
-        public IntPtr hIcon;
-        public int iIcon;
-        public uint dwAttributes;
-
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
-        public string szDisplayName;
-
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)]
-        public string szTypeName;
-    }
-
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    private static extern IntPtr SHGetFileInfo(
-        string pszPath,
-        uint dwFileAttributes,
-        out SHFILEINFO psfi,
-        uint cbFileInfo,
-        uint uFlags);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool DestroyIcon(IntPtr hIcon);
-
-    private const uint SHGFI_ICON = 0x000000100;
-    private const uint SHGFI_LARGEICON = 0x000000000;
-    private const uint SHGFI_USEFILEATTRIBUTES = 0x000000010;
-    private const uint FILE_ATTRIBUTE_NORMAL = 0x80;
-
-    private const uint SHGFI_SYSICONINDEX = 0x000004000;
-    private const uint SHGFI_ICONLOCATION = 0x000001000;
-    private const uint SHGFI_SHELLICONSIZE = 0x000000004;
-
-    /// <summary>
-    /// Получает иконку файла:
-    ///  - если fileExists = true, SHGetFileInfo грузит иконку из реального файла;
-    ///  - если fileExists = false, используем SHGFI_USEFILEATTRIBUTES по расширению/типу.
-    /// </summary>
-    private static BitmapSource? GetFileIcon(string path, bool fileExists)
-    {
-        var shfi = new SHFILEINFO();
-
-        uint flags = SHGFI_ICON | SHGFI_LARGEICON;
-        uint attrs = 0;
-
-        if (!fileExists)
+        public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
         {
-            flags |= SHGFI_USEFILEATTRIBUTES;
-            attrs = FILE_ATTRIBUTE_NORMAL;
+            if (value is DockAppConfig app)
+            {
+                // --- ФИКС ЧЕХАРДЫ ИКОНОК ---
+                // Если окно уже находится в процессе закрытия (мертво), 
+                // говорим WPF ничего не делать. Это заморозит старую иконку 
+                // до конца анимации исчезновения панели.
+                if (app.IsRunning && app.WindowHandle != IntPtr.Zero && !Win32Helper.IsWindow(app.WindowHandle))
+                {
+                    return Binding.DoNothing;
+                }
+
+                try
+                {
+                    IntPtr activeHwnd = app.WindowHandle;
+
+                    if (app.IsRunning && activeHwnd != IntPtr.Zero)
+                    {
+                        IntPtr hIcon = IntPtr.Zero;
+                        IntPtr result;
+
+                        if (Win32Helper.SendMessageTimeout(activeHwnd, Win32Helper.WM_GETICON, (IntPtr)Win32Helper.ICON_BIG, IntPtr.Zero, Win32Helper.SMTO_ABORTIFHUNG, 50, out result) != IntPtr.Zero) hIcon = result;
+                        if (hIcon == IntPtr.Zero && Win32Helper.SendMessageTimeout(activeHwnd, Win32Helper.WM_GETICON, (IntPtr)Win32Helper.ICON_SMALL2, IntPtr.Zero, Win32Helper.SMTO_ABORTIFHUNG, 50, out result) != IntPtr.Zero) hIcon = result;
+                        if (hIcon == IntPtr.Zero && Win32Helper.SendMessageTimeout(activeHwnd, Win32Helper.WM_GETICON, (IntPtr)Win32Helper.ICON_SMALL, IntPtr.Zero, Win32Helper.SMTO_ABORTIFHUNG, 50, out result) != IntPtr.Zero) hIcon = result;
+                        if (hIcon == IntPtr.Zero) hIcon = Win32Helper.GetClassLongPtr(activeHwnd, Win32Helper.GCLP_HICON);
+                        if (hIcon == IntPtr.Zero) hIcon = Win32Helper.GetClassLongPtr(activeHwnd, Win32Helper.GCLP_HICONSM);
+
+                        if (hIcon != IntPtr.Zero)
+                        {
+                            var img = Imaging.CreateBitmapSourceFromHIcon(hIcon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                            img.Freeze();
+                            return img;
+                        }
+                    }
+
+                    string targetPath = app.Path;
+
+                    if (app.IsRunning && app.WindowHandles != null && app.WindowHandles.Count > 0)
+                    {
+                        IntPtr hwnd = app.WindowHandles[0];
+                        bool isUwpWrapper = IsUwpWrapper(hwnd);
+                        IntPtr realHwnd = GetRealUwpWindow(hwnd);
+
+                        if (isUwpWrapper && realHwnd == hwnd)
+                        {
+                            System.Threading.Thread.Sleep(50);
+                            realHwnd = GetRealUwpWindow(hwnd);
+                        }
+
+                        string aumid = GetAumidRobust(hwnd, realHwnd);
+                        if (!string.IsNullOrEmpty(aumid))
+                        {
+                            var img = ExtractIconFromPath(@"shell:AppsFolder\" + aumid);
+                            if (img != null) return img;
+                        }
+
+                        if (!IsUwpWrapper(realHwnd))
+                        {
+                            IntPtr hLiveIcon = GetLiveIcon(realHwnd);
+                            if (hLiveIcon != IntPtr.Zero)
+                            {
+                                var liveImg = Imaging.CreateBitmapSourceFromHIcon(hLiveIcon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                                liveImg.Freeze();
+                                return liveImg;
+                            }
+                        }
+
+                        string realExePath = GetProcessExecutablePath(realHwnd != IntPtr.Zero ? realHwnd : hwnd);
+                        if (!string.IsNullOrEmpty(realExePath)) targetPath = realExePath;
+                    }
+                    else if (!string.IsNullOrEmpty(targetPath) && !targetPath.Contains("\\") && targetPath.Contains("!"))
+                    {
+                        var img = ExtractIconFromPath(@"shell:AppsFolder\" + targetPath);
+                        if (img != null) return img;
+                    }
+
+                    if (string.IsNullOrEmpty(targetPath)) return null!;
+
+                    var finalImg = ExtractIconFromPath(targetPath);
+                    if (finalImg != null) return finalImg;
+
+                    var fallbackIcon = System.Drawing.Icon.ExtractAssociatedIcon(targetPath);
+                    if (fallbackIcon != null)
+                    {
+                        var fallbackImg = Imaging.CreateBitmapSourceFromHIcon(fallbackIcon.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                        fallbackImg.Freeze();
+                        return fallbackImg;
+                    }
+                }
+                catch { }
+            }
+            return null!;
         }
 
-        var res = SHGetFileInfo(
-            path,
-            attrs,
-            out shfi,
-            (uint)Marshal.SizeOf(shfi),
-            flags);
-
-        if (res == IntPtr.Zero || shfi.hIcon == IntPtr.Zero)
-            return null;
-
-        try
-        {
-            var bs = Imaging.CreateBitmapSourceFromHIcon(
-                shfi.hIcon,
-                Int32Rect.Empty,
-                BitmapSizeOptions.FromEmptyOptions());
-            bs.Freeze();
-            return bs;
-        }
-        finally
-        {
-            DestroyIcon(shfi.hIcon);
-        }
+        public object ConvertBack(object value, Type targetTypes, object parameter, System.Globalization.CultureInfo culture) => throw new NotImplementedException();
     }
 }

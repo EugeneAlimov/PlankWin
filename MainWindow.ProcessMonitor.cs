@@ -1,332 +1,301 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
+using System.Linq;
+using System.Windows.Interop;
+using System.Windows;
 using System.Text;
-using System.Windows.Threading;
+using System.Threading.Tasks; // Добавили для Task.Delay
 
 namespace PlankWin
 {
     public partial class MainWindow
     {
-        private void StartProcessMonitor()
-        {
-            _processPollTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(1)
-            };
-            _processPollTimer.Tick += (_, _) => UpdateRunningState();
-            _processPollTimer.Start();
+        private int _shellHookMessage;
+        private HwndSource? _hwndSource;
 
-            UpdateRunningState();
+        private const int HSHELL_WINDOWCREATED = 1;
+        private const int HSHELL_WINDOWDESTROYED = 2;
+        private const int HSHELL_WINDOWACTIVATED = 4;
+        private const int HSHELL_RUDEAPPACTIVATED = 32772;
+        private const int HSHELL_REDRAW = 6;
+
+        private void InitializeProcessMonitor()
+        {
+            IntPtr hwnd = new WindowInteropHelper(this).Handle;
+            _hwndSource = HwndSource.FromHwnd(hwnd);
+
+            if (_hwndSource != null)
+            {
+                _hwndSource.AddHook(ShellMonitorWndProc);
+                _shellHookMessage = Win32Helper.RegisterWindowMessage("SHELLHOOK");
+                Win32Helper.RegisterShellHookWindow(hwnd);
+                RefreshRunningApps();
+            }
         }
 
-        private static bool MatchesTaskbarEntry(DockAppConfig app, TaskbarApp tb)
+        private void StopProcessMonitor()
         {
-            // 1. Явное совпадение по ProcessName
-            if (!string.IsNullOrWhiteSpace(app.ProcessName) &&
-                string.Equals(app.ProcessName, tb.ProcessName, StringComparison.OrdinalIgnoreCase))
-                return true;
-
-            // 2. Совпадение по имени exe, если путь указан
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(app.Path))
-                {
-                    var exe = System.IO.Path.GetFileNameWithoutExtension(app.Path);
-                    if (!string.IsNullOrWhiteSpace(exe) &&
-                        string.Equals(exe, tb.ProcessName, StringComparison.OrdinalIgnoreCase))
-                        return true;
-                }
-            }
-            catch
-            {
-            }
-
-            // 3. Совпадение по названию (для динамических приложений)
-            if (!string.IsNullOrWhiteSpace(app.Name) &&
-                !string.IsNullOrWhiteSpace(tb.Title) &&
-                string.Equals(app.Name, tb.Title, StringComparison.OrdinalIgnoreCase))
-                return true;
-
-            return false;
+            IntPtr hwnd = new WindowInteropHelper(this).Handle;
+            Win32Helper.DeregisterShellHookWindow(hwnd);
+            _hwndSource?.RemoveHook(ShellMonitorWndProc);
         }
 
-        private void UpdateRunningState()
+        private void OnShellWindowRedraw(IntPtr hWnd)
         {
-            var taskbarApps = new List<TaskbarApp>(EnumerateTaskbarWindows());
-
-            // Обновляем IsRunning и WindowHandle для закреплённых приложений
-            foreach (var app in Apps)
+            var targetApp = Apps.FirstOrDefault(a => a.WindowHandles.Contains(hWnd));
+            if (targetApp != null && targetApp.WindowHandle == hWnd)
             {
-                bool running = false;
-                app.WindowHandle = IntPtr.Zero;
+                targetApp.ForceIconUpdate();
+            }
+        }
 
-                foreach (var tb in taskbarApps)
+        private IntPtr ShellMonitorWndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (msg == _shellHookMessage)
+            {
+                int shellEvent = wParam.ToInt32();
+                IntPtr targetHwnd = lParam;
+
+                switch (shellEvent)
                 {
-                    if (MatchesTaskbarEntry(app, tb))
-                    {
-                        running = true;
-                        app.WindowHandle = tb.Hwnd;
-                        break;
-                    }
-                }
+                    case HSHELL_WINDOWCREATED:
+                        OnShellWindowCreated(targetHwnd);
 
-                app.IsRunning = running;
+                        // ФИКС ДЛЯ ИКОНОК WPF: 
+                        // Даем приложению 1 секунду на отрисовку, затем просим конвертер обновить иконку
+                        Task.Delay(1000).ContinueWith(_ => Dispatcher.InvokeAsync(() => {
+                            var app = Apps.FirstOrDefault(a => a.WindowHandles.Contains(targetHwnd));
+                            app?.ForceIconUpdate();
+                        }));
+                        break;
+
+                    case HSHELL_WINDOWDESTROYED:
+                        OnShellWindowDestroyed(targetHwnd);
+                        break;
+
+                    case HSHELL_WINDOWACTIVATED:
+                    case HSHELL_RUDEAPPACTIVATED:
+                        OnShellWindowActivated(targetHwnd);
+                        break;
+
+                    case HSHELL_REDRAW:
+                        // ФИКС ПЕРЕГРЕВА ПРОЦЕССОРА:
+                        // OnShellWindowRedraw(targetHwnd); // <-- ЗАКОММЕНТИРОВАНО!
+                        break;
+                }
+            }
+            return IntPtr.Zero;
+        }
+        // ФИКС №2: Добавили параметр retryCount для ожидания загрузки
+        private void OnShellWindowCreated(IntPtr hWnd, int retryCount = 0)
+        {
+            if (!IsValidAppWindow(hWnd))
+            {
+                // Если окно невидимо, но это UWP-коробка, не сдаемся! 
+                // Ждем 200мс и проверяем снова (до 10 попыток).
+                if (retryCount < 10 && Win32Helper.GetWindowClassName(hWnd) == "ApplicationFrameWindow")
+                {
+                    Task.Delay(200).ContinueWith(_ => Dispatcher.InvokeAsync(() => OnShellWindowCreated(hWnd, retryCount + 1)));
+                }
+                return;
             }
 
-            // Удаляем динамические, которые больше не запущены
-            for (int i = Apps.Count - 1; i >= 0; i--)
+            string exePath = GetProcessExecutablePath(hWnd);
+            if (string.IsNullOrEmpty(exePath)) return;
+
+            // Если окно стало видимым, но внутри него еще нет реального приложения 
+            // (путь все еще ведет к пустой коробке ApplicationFrameHost), снова ждем.
+            if (exePath.Contains("ApplicationFrameHost", StringComparison.OrdinalIgnoreCase))
             {
-                var app = Apps[i];
-                if (!app.IsDynamic)
-                    continue;
-
-                bool stillRunning = false;
-                foreach (var tb in taskbarApps)
+                if (retryCount < 10)
                 {
-                    if (MatchesTaskbarEntry(app, tb))
-                    {
-                        stillRunning = true;
-                        break;
-                    }
+                    Task.Delay(200).ContinueWith(_ => Dispatcher.InvokeAsync(() => OnShellWindowCreated(hWnd, retryCount + 1)));
                 }
-
-                if (!stillRunning)
-                {
-                    Apps.RemoveAt(i);
-                }
+                return;
             }
 
-            // Добавляем динамические для новых приложений
-            foreach (var tb in taskbarApps)
+            var targetApp = Apps.FirstOrDefault(a => a.Path.Equals(exePath, StringComparison.OrdinalIgnoreCase));
+
+            if (targetApp != null)
             {
-                // 1. Уже покрыто закреплённым приложением
-                bool coveredByPinned = false;
-                foreach (var app in Apps)
+                if (!targetApp.WindowHandles.Contains(hWnd))
                 {
-                    if (!app.IsDynamic && MatchesTaskbarEntry(app, tb))
-                    {
-                        coveredByPinned = true;
-                        break;
-                    }
+                    targetApp.WindowHandles.Add(hWnd);
+                    targetApp.WindowHandle = hWnd;
+                    targetApp.RunningInstancesCount = targetApp.WindowHandles.Count;
+                    targetApp.IsRunning = true;
+                    targetApp.ForceIconUpdate();
                 }
-
-                if (coveredByPinned)
-                    continue;
-
-                // 2. Уже есть динамический элемент для этого процесса
-                bool alreadyDynamic = false;
-                foreach (var app in Apps)
+            }
+            else
+            {
+                string processName = System.IO.Path.GetFileNameWithoutExtension(exePath);
+                var newApp = new DockAppConfig
                 {
-                    if (app.IsDynamic && MatchesTaskbarEntry(app, tb))
-                    {
-                        alreadyDynamic = true;
-                        app.IsRunning = true;
-                        app.WindowHandle = tb.Hwnd;
-
-                        if (!string.IsNullOrWhiteSpace(tb.ExePath) &&
-                            string.IsNullOrWhiteSpace(app.Path))
-                        {
-                            app.Path = tb.ExePath;
-                        }
-
-                        break;
-                    }
-                }
-
-                if (alreadyDynamic)
-                    continue;
-
-                // 3. Новый динамический элемент
-                var dynApp = new DockAppConfig
-                {
-                    Name = string.IsNullOrWhiteSpace(tb.Title) ? tb.ProcessName : tb.Title,
-                    Path = tb.ExePath ?? string.Empty,
-                    ProcessName = tb.ProcessName,
+                    Name = processName,
+                    Path = exePath,
+                    ProcessName = processName,
                     IsDynamic = true,
                     IsRunning = true,
-                    WindowHandle = tb.Hwnd
+                    WindowHandle = hWnd,
+                    RunningInstancesCount = 1
                 };
-
-                Apps.Add(dynApp);
+                newApp.WindowHandles.Add(hWnd);
+                Apps.Add(newApp);
             }
         }
 
-        private sealed class TaskbarApp
+        private void OnShellWindowDestroyed(IntPtr hWnd)
         {
-            public string ProcessName { get; }
-            public string? ExePath { get; }
-            public string Title { get; }
-            public IntPtr Hwnd { get; }
-
-            public TaskbarApp(string processName, string? exePath, string title, IntPtr hwnd)
+            var targetApp = Apps.FirstOrDefault(a => a.WindowHandles.Contains(hWnd));
+            if (targetApp != null)
             {
-                ProcessName = processName;
-                ExePath = exePath;
-                Title = title;
-                Hwnd = hwnd;
+                targetApp.WindowHandles.Remove(hWnd);
+                targetApp.RunningInstancesCount = targetApp.WindowHandles.Count;
+
+                if (targetApp.RunningInstancesCount == 0)
+                {
+                    targetApp.IsRunning = false;
+                    targetApp.WindowHandle = IntPtr.Zero;
+
+                    if (targetApp.IsDynamic)
+                    {
+                        targetApp.IsDeleting = true;
+                        PositionDock(skipAnimation: false);
+                        Dispatcher.InvokeAsync(async () =>
+                        {
+                            await AnimateItemContainerAsync(targetApp, targetSize: 0, animateOpacity: true, durationMs: 350);
+                            Apps.Remove(targetApp);
+                        });
+                    }
+                }
+                else
+                {
+                    targetApp.WindowHandle = targetApp.WindowHandles.Last();
+                    targetApp.ForceIconUpdate(); // Добавил пинок, чтобы после закрытия окна иконка обновлялась на следующее
+                }
             }
         }
 
-        /// <summary>
-        /// Проверяем, нужно ли игнорировать процесс по имени из настроек.
-        /// Сравнение без учёта регистра, по подстроке.
-        /// </summary>
-        private bool ShouldIgnoreProcess(string processName)
+        // ФИКС №1: Добавили подстраховку при активации окна
+        private void OnShellWindowActivated(IntPtr hWnd)
         {
-            if (_settings?.IgnoreProcessNames == null || _settings.IgnoreProcessNames.Length == 0)
-                return false;
-
-            foreach (var raw in _settings.IgnoreProcessNames)
+            // Если окно активировалось (вышло на передний план), но его нет на панели 
+            // (например, мы пропустили его при запуске из-за невидимости) — добавляем его сейчас!
+            bool isKnown = Apps.Any(a => a.WindowHandles.Contains(hWnd));
+            if (!isKnown)
             {
-                if (string.IsNullOrWhiteSpace(raw))
-                    continue;
+                OnShellWindowCreated(hWnd);
+            }
 
-                var pattern = raw.Trim();
-                if (processName.IndexOf(pattern, StringComparison.OrdinalIgnoreCase) >= 0)
+            foreach (var app in Apps) { app.IsActive = false; app.ActiveWindowIndex = -1; }
+            var targetApp = Apps.FirstOrDefault(a => a.WindowHandles.Contains(hWnd));
+            if (targetApp != null)
+            {
+                targetApp.IsActive = true;
+                targetApp.ActiveWindowIndex = targetApp.WindowHandles.IndexOf(hWnd);
+                targetApp.WindowHandle = hWnd;
+            }
+        }
+
+        // =========================================================
+        // ЖЕЛЕЗОБЕТОННЫЙ ФИЛЬТР ОКОН
+        // =========================================================
+        private bool IsValidAppWindow(IntPtr hWnd)
+        {
+            if (!Win32Helper.IsWindowVisible(hWnd)) return false;
+            if (IsWindowCloaked(hWnd)) return false;
+
+            int exStyle = Win32Helper.GetWindowLong(hWnd, Win32Helper.GWL_EXSTYLE);
+            if ((exStyle & Win32Helper.WS_EX_TOOLWINDOW) != 0) return false;
+
+            IntPtr owner = Win32Helper.GetWindow(hWnd, Win32Helper.GW_OWNER);
+            if (owner != IntPtr.Zero && (exStyle & Win32Helper.WS_EX_APPWINDOW) == 0) return false;
+
+            string className = Win32Helper.GetWindowClassName(hWnd);
+
+            // 1. ЧЕРНЫЙ СПИСОК КЛАССОВ (Включая LivePreviewSurface и все элементы таскбара)
+            string[] ignoredClasses = {
+                "Progman", "WorkerW", "Shell_TrayWnd", "TrayNotifyWnd",
+                "LivePreviewSurface", "ThumbnailDeviceHelperWnd",
+                "TaskSwitchWnd", "MultitaskingViewFrame", "Windows.UI.Core.CoreWindow",
+                "XamlExplorerHostIslandWindow", "NotifyIconOverflowWindow"
+            };
+            if (ignoredClasses.Contains(className)) return false;
+
+            // 2. ЧЕРНЫЙ СПИСОК ЗАГОЛОВКОВ
+            var sb = new StringBuilder(256);
+            Win32Helper.GetWindowText(hWnd, sb, sb.Capacity);
+            string title = sb.ToString();
+
+            if (title == "LivePreviewSurface" || title == "Task View" || title == "Program Manager") return false;
+
+            // 3. ЧЕРНЫЙ СПИСОК ПРОЦЕССОВ (Скрытые фоновые процессы Windows 11)
+            string exePath = GetProcessExecutablePath(hWnd);
+            if (!string.IsNullOrEmpty(exePath))
+            {
+                string processName = System.IO.Path.GetFileNameWithoutExtension(exePath);
+
+                if (processName.Equals("SearchHost", StringComparison.OrdinalIgnoreCase) ||
+                    processName.Equals("StartMenuExperienceHost", StringComparison.OrdinalIgnoreCase) ||
+                    processName.Equals("ShellExperienceHost", StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                if (Settings.IgnoreProcessNames != null && Settings.IgnoreProcessNames.Any(p => p.Equals(processName, StringComparison.OrdinalIgnoreCase)))
+                    return false;
+            }
+            return true;
+        }
+
+        private void RefreshRunningApps()
+        {
+            Win32Helper.EnumWindows((hWnd, lParam) =>
+            {
+                if (IsValidAppWindow(hWnd))
+                {
+                    string path = GetProcessExecutablePath(hWnd);
+                    if (!string.IsNullOrEmpty(path)) Dispatcher.InvokeAsync(() => OnShellWindowCreated(hWnd));
+                }
+                return true;
+            }, IntPtr.Zero);
+        }
+
+        private string GetProcessExecutablePath(IntPtr hWnd)
+        {
+            string className = Win32Helper.GetWindowClassName(hWnd);
+            if (className == "ApplicationFrameWindow")
+            {
+                IntPtr realHwnd = IntPtr.Zero;
+                Win32Helper.EnumChildWindows(hWnd, (child, param) =>
+                {
+                    if (Win32Helper.GetWindowClassName(child) == "Windows.UI.Core.CoreWindow")
+                    {
+                        realHwnd = child;
+                        return false;
+                    }
                     return true;
+                }, IntPtr.Zero);
+
+                if (realHwnd != IntPtr.Zero) hWnd = realHwnd;
             }
 
-            return false;
-        }
+            Win32Helper.GetWindowThreadProcessId(hWnd, out uint pid);
+            if (pid == 0) return string.Empty;
 
-        /// <summary>
-        /// Перечисляет процессы, которые должны считаться "приложениями" (как в разделе Apps диспетчера задач).
-        /// Ориентируемся на Process.MainWindowHandle / MainWindowTitle, плюс проверка стилей окна.
-        /// </summary>
-        private IEnumerable<TaskbarApp> EnumerateTaskbarWindows()
-        {
-            var result = new List<TaskbarApp>();
+            IntPtr hProcess = Win32Helper.OpenProcess(0x1000, false, pid);
+            if (hProcess == IntPtr.Zero) return string.Empty;
 
-            Process[] processes;
             try
             {
-                processes = Process.GetProcesses();
+                int size = 1024;
+                var sb = new StringBuilder(size);
+                if (Win32Helper.QueryFullProcessImageName(hProcess, 0, sb, ref size)) return sb.ToString();
             }
-            catch
+            finally
             {
-                yield break;
+                Win32Helper.CloseHandle(hProcess);
             }
-
-            int currentPid = Process.GetCurrentProcess().Id;
-
-            foreach (var proc in processes)
-            {
-                try
-                {
-                    if (proc.Id == currentPid)
-                        continue;
-
-                    string processName = proc.ProcessName;
-                    if (string.IsNullOrWhiteSpace(processName))
-                        continue;
-
-                    // Игнор по списку из конфига (если когда-то захочешь туда добавить что-то)
-                    if (ShouldIgnoreProcess(processName))
-                        continue;
-
-                    string lower = processName.ToLowerInvariant();
-
-                    // Экранная клавиатура / IME и прочий мусор
-                    if (lower.Contains("textinputhost"))
-                        continue;
-
-                    bool isSettingsApp =
-                        lower.Contains("systemsettings") ||
-                        lower.Contains("immersivecontrolpanel");
-
-                    // --- главное окно процесса, как его видит .NET (и примерно так же Task Manager) ---
-                    IntPtr hwnd;
-                    string title;
-                    try
-                    {
-                        hwnd = proc.MainWindowHandle;
-                        title = proc.MainWindowTitle ?? string.Empty;
-                    }
-                    catch
-                    {
-                        continue;
-                    }
-
-                    // Нет главного окна или заголовка — считаем фоновым
-                    if (hwnd == IntPtr.Zero || string.IsNullOrWhiteSpace(title))
-                        continue;
-
-                    // Окно должно быть видимым и не cloaked
-                    if (!IsWindowVisible(hwnd))
-                        continue;
-                    if (IsWindowCloaked(hwnd))
-                        continue;
-                    if (IsShellLikeWindow(hwnd))
-                        continue;
-
-                    // --- стили окна ---
-                    IntPtr stylePtr = IntPtr.Size == 8
-                        ? GetWindowLongPtr(hwnd, GWL_STYLE)
-                        : new IntPtr(GetWindowLong(hwnd, GWL_STYLE));
-                    IntPtr exStylePtr = IntPtr.Size == 8
-                        ? GetWindowLongPtr(hwnd, GWL_EXSTYLE)
-                        : new IntPtr(GetWindowLong(hwnd, GWL_EXSTYLE));
-
-                    uint style = (uint)stylePtr.ToInt64();
-                    uint exStyle = (uint)exStylePtr.ToInt64();
-
-                    // TOOLWINDOW — служебное окно; для Settings делаем исключение
-                    if ((exStyle & WS_EX_TOOLWINDOW) != 0 && !isSettingsApp)
-                        continue;
-
-                    IntPtr owner = GetWindow(hwnd, GW_OWNER);
-                    if (owner != IntPtr.Zero && (exStyle & WS_EX_APPWINDOW) == 0 && !isSettingsApp)
-                        continue;
-
-                    bool hasCaption = (style & WS_CAPTION) != 0;
-                    bool hasMinimize = (style & WS_MINIMIZEBOX) != 0;
-                    if (!hasCaption && !hasMinimize && !isSettingsApp)
-                        continue;
-
-                    // --- путь к exe (для иконки и запуска) ---
-                    string? exePath = null;
-
-                    try
-                    {
-                        exePath = proc.MainModule?.FileName;
-                    }
-                    catch
-                    {
-                        exePath = null;
-                    }
-
-                    if (string.IsNullOrEmpty(exePath))
-                    {
-                        try
-                        {
-                            IntPtr hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, proc.Id);
-                            if (hProcess != IntPtr.Zero)
-                            {
-                                var sbPath = new StringBuilder(1024);
-                                int size = sbPath.Capacity;
-                                if (QueryFullProcessImageName(hProcess, 0, sbPath, ref size))
-                                {
-                                    exePath = sbPath.ToString(0, size);
-                                }
-                                CloseHandle(hProcess);
-                            }
-                        }
-                        catch
-                        {
-                        }
-                    }
-
-                    result.Add(new TaskbarApp(processName, exePath, title, hwnd));
-                }
-                catch
-                {
-                    // игнорируем отдельные упавшие процессы
-                }
-            }
-
-            foreach (var item in result)
-                yield return item;
+            return string.Empty;
         }
     }
 }

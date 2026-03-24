@@ -1,114 +1,112 @@
-using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
 
-namespace PlankWin;
-
-public class DockAppConfig : INotifyPropertyChanged
+namespace PlankWin
 {
-    private string _name = string.Empty;
-    private string _path = string.Empty;
-    private string? _arguments;
-    private string? _icon;
-    private string? _workingDirectory;
-    private bool _runAsAdmin;
-
-    private bool _isDynamic;
-    private string? _processName;
-    private bool _isRunning;
-    private int _processId;
-
-    private IntPtr _windowHandle;
-
-    public string Name
+    public class DockAppConfig : INotifyPropertyChanged
     {
-        get => _name;
-        set => SetField(ref _name, value);
-    }
+        private bool _isActive = false;
+        [JsonIgnore]
+        public bool IsActive
+        {
+            get => _isActive;
+            set { if (_isActive == value) return; _isActive = value; OnPropertyChanged(); }
+        }
 
-    public string Path
-    {
-        get => _path;
-        set => SetField(ref _path, value);
-    }
+        private int _activeWindowIndex = -1;
+        [JsonIgnore]
+        public int ActiveWindowIndex
+        {
+            get => _activeWindowIndex;
+            set { if (_activeWindowIndex == value) return; _activeWindowIndex = value; OnPropertyChanged(); }
+        }
 
-    public string? Arguments
-    {
-        get => _arguments;
-        set => SetField(ref _arguments, value);
-    }
+        public string Name { get; set; } = string.Empty;
+        public string Path { get; set; } = string.Empty;
+        public string? Arguments { get; set; }
 
-    public string? Icon
-    {
-        get => _icon;
-        set => SetField(ref _icon, value);
-    }
+        public string? Icon { get; set; }
+        public string? ProcessName { get; set; }
 
-    public string? WorkingDirectory
-    {
-        get => _workingDirectory;
-        set => SetField(ref _workingDirectory, value);
-    }
+        private bool _isDeleting = false;
+        [JsonIgnore]
+        public bool IsDeleting
+        {
+            get => _isDeleting;
+            set { if (_isDeleting == value) return; _isDeleting = value; OnPropertyChanged(); }
+        }
 
-    public bool RunAsAdmin
-    {
-        get => _runAsAdmin;
-        set => SetField(ref _runAsAdmin, value);
-    }
+        private bool _isDynamic = true;
+        public bool IsDynamic
+        {
+            get => _isDynamic;
+            set { if (_isDynamic == value) return; _isDynamic = value; OnPropertyChanged(); }
+        }
 
-    // Динамическое приложение (создано по процессу во время работы)
-    [JsonIgnore]
-    public bool IsDynamic
-    {
-        get => _isDynamic;
-        set => SetField(ref _isDynamic, value);
-    }
+        private bool _isRunning;
+        public bool IsRunning
+        {
+            get => _isRunning;
+            set { if (_isRunning == value) return; _isRunning = value; OnPropertyChanged(); }
+        }
 
-    // Имя процесса (может отличаться от имени exe)
-    public string? ProcessName
-    {
-        get => _processName;
-        set => SetField(ref _processName, value);
-    }
+        private int _runningInstancesCount;
+        public int RunningInstancesCount
+        {
+            get => _runningInstancesCount;
+            set { if (_runningInstancesCount == value) return; _runningInstancesCount = value; OnPropertyChanged(); }
+        }
 
-    // Запущено ли приложение (для подсветки)
-    [JsonIgnore]
-    public bool IsRunning
-    {
-        get => _isRunning;
-        set => SetField(ref _isRunning, value);
-    }
+        private IntPtr _windowHandle = IntPtr.Zero;
+        [JsonIgnore]
+        public IntPtr WindowHandle
+        {
+            get => _windowHandle;
+            set
+            {
+                if (_windowHandle == value) return;
+                _windowHandle = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(ActiveIconTrigger)); // МАГИЯ: Заставляем WPF перерисовать иконку!
+            }
+        }
 
-    [JsonIgnore]
-    public int ProcessId
-    {
-        get => _processId;
-        set => SetField(ref _processId, value);
-    }
+        [JsonIgnore]
+        public DockAppConfig ActiveIconTrigger => this; // Свойство-пустышка для биндинга
 
-    // Хэндл окна (для динамических приложений), нужен для вытаскивания иконки окна
-    [JsonIgnore]
-    public IntPtr WindowHandle
-    {
-        get => _windowHandle;
-        set => SetField(ref _windowHandle, value);
-    }
+        public void ForceIconUpdate()
+        {
+            // Мы меняем триггер, на который подписана иконка в XAML
+            OnPropertyChanged(nameof(WindowHandle));
+            OnPropertyChanged(nameof(Path));
+            // Если есть специальное свойство для обновления иконки, дергаем и его
+            OnPropertyChanged(nameof(ActiveIconTrigger));
+        }
 
-    // Для отладки
-    public override string ToString() => $"{Name} ({Path})";
+        [JsonIgnore]
+        public System.Collections.Generic.List<IntPtr> WindowHandles { get; } = new();
 
-    public event PropertyChangedEventHandler? PropertyChanged;
+        private bool _isPlaceholder = false;
+        [JsonIgnore]
+        public bool IsPlaceholder
+        {
+            get => _isPlaceholder;
+            set { if (_isPlaceholder == value) return; _isPlaceholder = value; OnPropertyChanged(); }
+        }
 
-    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        private double _edgePushProgress = 0;
+        [JsonIgnore]
+        public double EdgePushProgress
+        {
+            get => _edgePushProgress;
+            set { if (_edgePushProgress == value) return; _edgePushProgress = value; OnPropertyChanged(); }
+        }
 
-    protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
-    {
-        if (Equals(field, value))
-            return false;
-        field = value;
-        OnPropertyChanged(propertyName);
-        return true;
+        public event PropertyChangedEventHandler? PropertyChanged;
+        protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
     }
 }
