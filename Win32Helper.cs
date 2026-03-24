@@ -9,6 +9,7 @@ namespace PlankWin
         // ==========================================
         // БАЗОВЫЕ ФУНКЦИИ УПРАВЛЕНИЯ ОКНАМИ
         // ==========================================
+
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool IsWindow(IntPtr hWnd);
@@ -352,5 +353,21 @@ namespace PlankWin
 
         [DllImport("user32.dll")]
         public static extern uint GetRawInputData(IntPtr hRawInput, uint uiCommand, out RAWINPUT pData, ref uint pcbSize, uint cbSizeHeader);
+
+        // ==========================================
+        // UWP APPLICATION USER MODEL ID SUPPORT  
+        // ==========================================
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern int GetWindowApplicationUserModelId(
+            IntPtr hwnd,
+            ref uint applicationUserModelIdLength,
+            IntPtr applicationUserModelId);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        public static extern int GetProcessApplicationUserModelId(
+            IntPtr hProcess,
+            ref uint applicationUserModelIdLength,
+            IntPtr applicationUserModelId);
     }
 }

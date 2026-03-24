@@ -4,7 +4,7 @@ using System.Linq;
 using System.Windows.Interop;
 using System.Windows;
 using System.Text;
-using System.Threading.Tasks; // Добавили для Task.Delay
+using System.Threading.Tasks;
 
 namespace PlankWin
 {
@@ -86,7 +86,7 @@ namespace PlankWin
             }
             return IntPtr.Zero;
         }
-        // ФИКС №2: Добавили параметр retryCount для ожидания загрузки
+
         private void OnShellWindowCreated(IntPtr hWnd, int retryCount = 0)
         {
             if (!IsValidAppWindow(hWnd))
@@ -172,16 +172,14 @@ namespace PlankWin
                 else
                 {
                     targetApp.WindowHandle = targetApp.WindowHandles.Last();
-                    targetApp.ForceIconUpdate(); // Добавил пинок, чтобы после закрытия окна иконка обновлялась на следующее
+                    targetApp.ForceIconUpdate();
                 }
             }
         }
 
-        // ФИКС №1: Добавили подстраховку при активации окна
         private void OnShellWindowActivated(IntPtr hWnd)
         {
             // Если окно активировалось (вышло на передний план), но его нет на панели 
-            // (например, мы пропустили его при запуске из-за невидимости) — добавляем его сейчас!
             bool isKnown = Apps.Any(a => a.WindowHandles.Contains(hWnd));
             if (!isKnown)
             {
@@ -199,65 +197,224 @@ namespace PlankWin
         }
 
         // =========================================================
-        // ЖЕЛЕЗОБЕТОННЫЙ ФИЛЬТР ОКОН
+        // УЛУЧШЕННЫЙ ЖЕЛЕЗОБЕТОННЫЙ ФИЛЬТР ОКОН
         // =========================================================
         private bool IsValidAppWindow(IntPtr hWnd)
         {
-            if (!Win32Helper.IsWindowVisible(hWnd)) return false;
-            if (IsWindowCloaked(hWnd)) return false;
-
-            int exStyle = Win32Helper.GetWindowLong(hWnd, Win32Helper.GWL_EXSTYLE);
-            if ((exStyle & Win32Helper.WS_EX_TOOLWINDOW) != 0) return false;
-
-            IntPtr owner = Win32Helper.GetWindow(hWnd, Win32Helper.GW_OWNER);
-            if (owner != IntPtr.Zero && (exStyle & Win32Helper.WS_EX_APPWINDOW) == 0) return false;
-
-            string className = Win32Helper.GetWindowClassName(hWnd);
-
-            // 1. ЧЕРНЫЙ СПИСОК КЛАССОВ (Включая LivePreviewSurface и все элементы таскбара)
-            string[] ignoredClasses = {
-                "Progman", "WorkerW", "Shell_TrayWnd", "TrayNotifyWnd",
-                "LivePreviewSurface", "ThumbnailDeviceHelperWnd",
-                "TaskSwitchWnd", "MultitaskingViewFrame", "Windows.UI.Core.CoreWindow",
-                "XamlExplorerHostIslandWindow", "NotifyIconOverflowWindow"
-            };
-            if (ignoredClasses.Contains(className)) return false;
-
-            // 2. ЧЕРНЫЙ СПИСОК ЗАГОЛОВКОВ
-            var sb = new StringBuilder(256);
-            Win32Helper.GetWindowText(hWnd, sb, sb.Capacity);
-            string title = sb.ToString();
-
-            if (title == "LivePreviewSurface" || title == "Task View" || title == "Program Manager") return false;
-
-            // 3. ЧЕРНЫЙ СПИСОК ПРОЦЕССОВ (Скрытые фоновые процессы Windows 11)
-            string exePath = GetProcessExecutablePath(hWnd);
-            if (!string.IsNullOrEmpty(exePath))
+            try
             {
-                string processName = System.IO.Path.GetFileNameWithoutExtension(exePath);
+                // Базовые проверки видимости
+                if (!Win32Helper.IsWindowVisible(hWnd)) return false;
+                if (IsWindowCloaked(hWnd)) return false;
 
-                if (processName.Equals("SearchHost", StringComparison.OrdinalIgnoreCase) ||
-                    processName.Equals("StartMenuExperienceHost", StringComparison.OrdinalIgnoreCase) ||
-                    processName.Equals("ShellExperienceHost", StringComparison.OrdinalIgnoreCase))
-                    return false;
+                // Проверки стилей окна
+                int exStyle = Win32Helper.GetWindowLong(hWnd, Win32Helper.GWL_EXSTYLE);
+                if ((exStyle & Win32Helper.WS_EX_TOOLWINDOW) != 0) return false;
 
-                if (Settings.IgnoreProcessNames != null && Settings.IgnoreProcessNames.Any(p => p.Equals(processName, StringComparison.OrdinalIgnoreCase)))
+                IntPtr owner = Win32Helper.GetWindow(hWnd, Win32Helper.GW_OWNER);
+                if (owner != IntPtr.Zero && (exStyle & Win32Helper.WS_EX_APPWINDOW) == 0) return false;
+
+                // Получаем данные об окне
+                string className = Win32Helper.GetWindowClassName(hWnd);
+                var sb = new StringBuilder(256);
+                Win32Helper.GetWindowText(hWnd, sb, sb.Capacity);
+                string title = sb.ToString();
+
+                // 1. ЧЕРНЫЙ СПИСОК КЛАССОВ ОКОН (БЕЗ блокировки UWP!)
+                string[] ignoredClasses = {
+                    // Основные системные окна
+                    "Progman", "WorkerW", "Shell_TrayWnd", "TrayNotifyWnd",
+                    
+                    // Task View и предварительный просмотр - ВОТ ГЛАВНЫЕ ВРАГИ!
+                    "LivePreviewSurface", "ThumbnailDeviceHelperWnd",
+                    "TaskSwitchWnd", "MultitaskingViewFrame",
+                    "TaskListThumbnailWnd", "TaskbandCreatedByUnknownApplication",
+                    
+                    // Windows 11 служебные окна
+                    "XamlExplorerHostIslandWindow", "NotifyIconOverflowWindow",
+                    "Windows.UI.Popups.PopupHost",
+                    
+                    // Дополнительные системные классы
+                    "IMEClass", "TextInputHost", "InputSwitchWndClass",
+                    "MSTaskSwWClass", "Button", "Static"
+                };
+
+                if (ignoredClasses.Contains(className, StringComparer.OrdinalIgnoreCase))
+                {
+                    System.Diagnostics.Debug.WriteLine($"Filtered by class: {className} - {title}");
                     return false;
+                }
+
+                // 2. ЧЕРНЫЙ СПИСОК ЗАГОЛОВКОВ ОКОН
+                string[] ignoredTitles = {
+                    "LivePreviewSurface", "Task View", "Program Manager",
+                    "Default IME", "MSCTFIME UI", "GDI+ Window",
+                    "OLEChannelWnd", "Windows Input Experience",
+                    "Tooltip", "ToolTip", "PopupHost"
+                };
+
+                if (ignoredTitles.Any(t => title.Equals(t, StringComparison.OrdinalIgnoreCase)))
+                {
+                    System.Diagnostics.Debug.WriteLine($"Filtered by title: {title} - {className}");
+                    return false;
+                }
+
+                // 3. СПЕЦИАЛЬНАЯ ПРОВЕРКА ДЛЯ LivePreviewSurface и подобного
+                if (title.Contains("Preview", StringComparison.OrdinalIgnoreCase) ||
+                    className.Contains("Preview", StringComparison.OrdinalIgnoreCase) ||
+                    className.Contains("Thumbnail", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Проверяем процесс - если это explorer.exe с подозрительным окном
+                    string exePath = GetProcessExecutablePath(hWnd);
+                    if (!string.IsNullOrEmpty(exePath))
+                    {
+                        string processName = System.IO.Path.GetFileNameWithoutExtension(exePath);
+                        if (processName.Equals("explorer", StringComparison.OrdinalIgnoreCase))
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Filtered explorer preview window: {title} - {className}");
+                            return false;
+                        }
+                    }
+                }
+
+                // 4. ОСТОРОЖНЫЙ ЧЕРНЫЙ СПИСОК ПРОЦЕССОВ (БЕЗ ApplicationFrameHost!)
+                string processExecutablePath = GetProcessExecutablePath(hWnd);
+                if (!string.IsNullOrEmpty(processExecutablePath))
+                {
+                    string processName = System.IO.Path.GetFileNameWithoutExtension(processExecutablePath);
+
+                    // ТОЛЬКО самые очевидные системные процессы (НЕ блокируем UWP!)
+                    string[] ignoredProcesses = {
+                        "SearchHost", "StartMenuExperienceHost", "ShellExperienceHost",
+                        "TextInputHost", "RuntimeBroker"
+                        // УБРАЛ: ApplicationFrameHost, WWAHost, SystemSettings - они нужны для UWP!
+                    };
+
+                    if (ignoredProcesses.Contains(processName, StringComparer.OrdinalIgnoreCase))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Filtered by process: {processName} - {title}");
+                        return false;
+                    }
+
+                    // Пользовательский черный список из настроек
+                    if (Settings.IgnoreProcessNames != null &&
+                        Settings.IgnoreProcessNames.Any(p => p.Equals(processName, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Filtered by user setting: {processName}");
+                        return false;
+                    }
+                }
+
+                // 5. ПРОВЕРКИ ДЛЯ UWP (НЕ блокируем, а проверяем содержимое)
+                if (className == "ApplicationFrameWindow")
+                {
+                    // Для UWP окон проверяем есть ли реальное содержимое
+                    IntPtr realWindow = IntPtr.Zero;
+                    Win32Helper.EnumChildWindows(hWnd, (child, param) =>
+                    {
+                        string childClass = Win32Helper.GetWindowClassName(child);
+                        if (childClass == "Windows.UI.Core.CoreWindow")
+                        {
+                            realWindow = child;
+                            return false;
+                        }
+                        return true;
+                    }, IntPtr.Zero);
+
+                    // Если нет реального содержимого - это пустая оболочка, но НЕ блокируем сразу
+                    // Даем шанс приложению загрузиться в OnShellWindowCreated
+                    if (realWindow == IntPtr.Zero)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Empty UWP frame (will retry): {title}");
+                        // НЕ возвращаем false! Пусть OnShellWindowCreated попробует несколько раз
+                    }
+                }
+
+                // 6. ПРОВЕРКА НА МИНИМАЛЬНЫЙ РАЗМЕР ОКНА
+                if (Win32Helper.GetWindowRect(hWnd, out var rect))
+                {
+                    int width = rect.Right - rect.Left;
+                    int height = rect.Bottom - rect.Top;
+
+                    // Игнорируем слишком маленькие окна (скорее всего служебные)
+                    if (width < 50 || height < 50)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Filtered tiny window: {width}x{height} - {title}");
+                        return false;
+                    }
+                }
+
+                return true;
             }
-            return true;
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"IsValidAppWindow error: {ex.Message}");
+                return false;
+            }
         }
 
         private void RefreshRunningApps()
         {
+            var foundApps = new List<DockAppConfig>();
+
             Win32Helper.EnumWindows((hWnd, lParam) =>
             {
                 if (IsValidAppWindow(hWnd))
                 {
                     string path = GetProcessExecutablePath(hWnd);
-                    if (!string.IsNullOrEmpty(path)) Dispatcher.InvokeAsync(() => OnShellWindowCreated(hWnd));
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        Dispatcher.InvokeAsync(() =>
+                        {
+                            OnShellWindowCreated(hWnd);
+
+                            // Запоминаем приложение для последующего обновления иконок
+                            var app = Apps.FirstOrDefault(a => a.WindowHandles.Contains(hWnd));
+                            if (app != null && !foundApps.Contains(app))
+                            {
+                                foundApps.Add(app);
+                            }
+                        });
+                    }
                 }
                 return true;
             }, IntPtr.Zero);
+
+            // Принудительное обновление иконок после небольшой задержки
+            Task.Delay(500).ContinueWith(_ => Dispatcher.InvokeAsync(() =>
+            {
+                System.Diagnostics.Debug.WriteLine($"Force updating icons for {foundApps.Count} apps after initial scan");
+
+                foreach (var app in foundApps)
+                {
+                    if (app != null && app.IsRunning)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Force updating icon for: {app.Name}");
+                        app.ForceIconUpdate();
+                    }
+                }
+
+                // Дополнительное обновление для UWP приложений через 1.5 секунды
+                Task.Delay(1000).ContinueWith(__ => Dispatcher.InvokeAsync(() =>
+                {
+                    foreach (var app in foundApps)
+                    {
+                        if (app != null && app.IsRunning)
+                        {
+                            // Проверяем если это UWP приложение или если иконка еще не загрузилась
+                            bool isUwpApp = app.WindowHandles?.Any(hwnd =>
+                                Win32Helper.IsWindow(hwnd) &&
+                                Win32Helper.GetWindowClassName(hwnd) == "ApplicationFrameWindow") == true;
+
+                            if (isUwpApp)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Second force update for UWP app: {app.Name}");
+                                app.ForceIconUpdate();
+                            }
+                        }
+                    }
+                }));
+            }));
         }
 
         private string GetProcessExecutablePath(IntPtr hWnd)
@@ -289,7 +446,8 @@ namespace PlankWin
             {
                 int size = 1024;
                 var sb = new StringBuilder(size);
-                if (Win32Helper.QueryFullProcessImageName(hProcess, 0, sb, ref size)) return sb.ToString();
+                if (Win32Helper.QueryFullProcessImageName(hProcess, 0, sb, ref size))
+                    return sb.ToString();
             }
             finally
             {

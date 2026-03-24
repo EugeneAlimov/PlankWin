@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Data;
@@ -9,6 +10,9 @@ namespace PlankWin
 {
     public class AppIconConverter : IValueConverter
     {
+        // ДОБАВЛЯЕМ только кэш для избежания заглушек
+        private static readonly Dictionary<string, BitmapSource> _lastValidIconCache = new();
+
         private static bool IsUwpWrapper(IntPtr hwnd)
         {
             string className = Win32Helper.GetWindowClassName(hwnd);
@@ -118,7 +122,7 @@ namespace PlankWin
             return GetAumidFromProcess(hwnd);
         }
 
-        private static BitmapSource? ExtractIconFromPath(string path)
+        private static BitmapSource ExtractIconFromPath(string path)
         {
             if (string.IsNullOrEmpty(path)) return null;
 
@@ -168,17 +172,26 @@ namespace PlankWin
         {
             if (value is DockAppConfig app)
             {
-                // --- ФИКС ЧЕХАРДЫ ИКОНОК ---
-                // Если окно уже находится в процессе закрытия (мертво), 
-                // говорим WPF ничего не делать. Это заморозит старую иконку 
-                // до конца анимации исчезновения панели.
-                if (app.IsRunning && app.WindowHandle != IntPtr.Zero && !Win32Helper.IsWindow(app.WindowHandle))
-                {
-                    return Binding.DoNothing;
-                }
+                string cacheKey = $"{app.Path}_{app.Name}";
 
                 try
                 {
+                    // УЛУЧШЕННАЯ проверка на закрытие UWP приложения
+                    bool isAppClosing = IsAppActuallyClosing(app);
+
+                    if (isAppClosing)
+                    {
+                        // Возвращаем кэшированную иконку
+                        if (_lastValidIconCache.TryGetValue(cacheKey, out var cachedIcon))
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Returning cached icon for closing app: {app.Name}");
+                            return cachedIcon;
+                        }
+                        System.Diagnostics.Debug.WriteLine($"No cached icon for closing app: {app.Name}");
+                        return Binding.DoNothing;
+                    }
+
+                    // Приложение работает нормально - получаем иконку
                     IntPtr activeHwnd = app.WindowHandle;
 
                     if (app.IsRunning && activeHwnd != IntPtr.Zero)
@@ -196,67 +209,175 @@ namespace PlankWin
                         {
                             var img = Imaging.CreateBitmapSourceFromHIcon(hIcon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
                             img.Freeze();
+                            // ПРИНУДИТЕЛЬНОЕ кэширование для каждого успешного получения
+                            _lastValidIconCache[cacheKey] = img;
+                            System.Diagnostics.Debug.WriteLine($"Cached icon from window for: {app.Name}");
                             return img;
                         }
                     }
 
                     string targetPath = app.Path;
 
+                    // ОРИГИНАЛЬНАЯ UWP ЛОГИКА (РАБОЧАЯ!)
                     if (app.IsRunning && app.WindowHandles != null && app.WindowHandles.Count > 0)
                     {
-                        IntPtr hwnd = app.WindowHandles[0];
-                        bool isUwpWrapper = IsUwpWrapper(hwnd);
-                        IntPtr realHwnd = GetRealUwpWindow(hwnd);
-
-                        if (isUwpWrapper && realHwnd == hwnd)
+                        foreach (var hwnd in app.WindowHandles)
                         {
-                            System.Threading.Thread.Sleep(50);
-                            realHwnd = GetRealUwpWindow(hwnd);
-                        }
+                            // Пропускаем мертвые окна
+                            if (hwnd == IntPtr.Zero || !Win32Helper.IsWindow(hwnd)) continue;
 
-                        string aumid = GetAumidRobust(hwnd, realHwnd);
-                        if (!string.IsNullOrEmpty(aumid))
-                        {
-                            var img = ExtractIconFromPath(@"shell:AppsFolder\" + aumid);
-                            if (img != null) return img;
-                        }
+                            bool isUwpWrapper = IsUwpWrapper(hwnd);
+                            IntPtr realHwnd = GetRealUwpWindow(hwnd);
 
-                        if (!IsUwpWrapper(realHwnd))
-                        {
-                            IntPtr hLiveIcon = GetLiveIcon(realHwnd);
-                            if (hLiveIcon != IntPtr.Zero)
+                            if (isUwpWrapper && realHwnd != hwnd)
                             {
-                                var liveImg = Imaging.CreateBitmapSourceFromHIcon(hLiveIcon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-                                liveImg.Freeze();
-                                return liveImg;
+                                System.Threading.Thread.Sleep(50);
+                                realHwnd = GetRealUwpWindow(hwnd);
                             }
-                        }
 
-                        string realExePath = GetProcessExecutablePath(realHwnd != IntPtr.Zero ? realHwnd : hwnd);
-                        if (!string.IsNullOrEmpty(realExePath)) targetPath = realExePath;
+                            string aumid = GetAumidRobust(hwnd, realHwnd);
+                            if (!string.IsNullOrEmpty(aumid))
+                            {
+                                var img = ExtractIconFromPath(@"shell:AppsFolder\" + aumid);
+                                if (img != null)
+                                {
+                                    // ПРИНУДИТЕЛЬНОЕ кэширование UWP иконки
+                                    _lastValidIconCache[cacheKey] = img;
+                                    System.Diagnostics.Debug.WriteLine($"Cached UWP icon for: {app.Name} (AUMID: {aumid})");
+                                    return img;
+                                }
+                            }
+
+                            if (!IsUwpWrapper(realHwnd))
+                            {
+                                IntPtr hLiveIcon = GetLiveIcon(realHwnd);
+                                if (hLiveIcon != IntPtr.Zero)
+                                {
+                                    var liveImg = Imaging.CreateBitmapSourceFromHIcon(hLiveIcon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                                    liveImg.Freeze();
+                                    // ПРИНУДИТЕЛЬНОЕ кэширование живой иконки
+                                    _lastValidIconCache[cacheKey] = liveImg;
+                                    System.Diagnostics.Debug.WriteLine($"Cached live icon for: {app.Name}");
+                                    return liveImg;
+                                }
+                            }
+
+                            string realExePath = GetProcessExecutablePath(realHwnd != IntPtr.Zero ? realHwnd : hwnd);
+                            if (!string.IsNullOrEmpty(realExePath)) targetPath = realExePath;
+                        }
                     }
                     else if (!string.IsNullOrEmpty(targetPath) && !targetPath.Contains("\\") && targetPath.Contains("!"))
                     {
                         var img = ExtractIconFromPath(@"shell:AppsFolder\" + targetPath);
-                        if (img != null) return img;
+                        if (img != null)
+                        {
+                            _lastValidIconCache[cacheKey] = img;
+                            System.Diagnostics.Debug.WriteLine($"Cached shell icon for: {app.Name}");
+                            return img;
+                        }
                     }
 
-                    if (string.IsNullOrEmpty(targetPath)) return null!;
+                    if (string.IsNullOrEmpty(targetPath))
+                    {
+                        // Возвращаем кэш если нет пути
+                        if (_lastValidIconCache.TryGetValue(cacheKey, out var fallback))
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Returning cached fallback for: {app.Name}");
+                            return fallback;
+                        }
+                        return null!;
+                    }
 
                     var finalImg = ExtractIconFromPath(targetPath);
-                    if (finalImg != null) return finalImg;
+                    if (finalImg != null)
+                    {
+                        _lastValidIconCache[cacheKey] = finalImg;
+                        System.Diagnostics.Debug.WriteLine($"Cached extracted icon for: {app.Name}");
+                        return finalImg;
+                    }
 
                     var fallbackIcon = System.Drawing.Icon.ExtractAssociatedIcon(targetPath);
                     if (fallbackIcon != null)
                     {
                         var fallbackImg = Imaging.CreateBitmapSourceFromHIcon(fallbackIcon.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
                         fallbackImg.Freeze();
+                        _lastValidIconCache[cacheKey] = fallbackImg;
+                        System.Diagnostics.Debug.WriteLine($"Cached fallback system icon for: {app.Name}");
                         return fallbackImg;
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"AppIconConverter error for {app.Name}: {ex.Message}");
+
+                    // При ошибке возвращаем кэш
+                    if (_lastValidIconCache.TryGetValue(cacheKey, out var errorFallback))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Returning cached icon after error for: {app.Name}");
+                        return errorFallback;
+                    }
+                }
             }
             return null!;
+        }
+
+        // НОВЫЙ улучшенный метод определения закрытия
+        private static bool IsAppActuallyClosing(DockAppConfig app)
+        {
+            try
+            {
+                // Если приложение помечено как удаляющееся
+                if (app.IsDeleting)
+                {
+                    System.Diagnostics.Debug.WriteLine($"App {app.Name} is marked as deleting");
+                    return true;
+                }
+
+                // Если приложение не запущено
+                if (!app.IsRunning)
+                {
+                    System.Diagnostics.Debug.WriteLine($"App {app.Name} is not running");
+                    return true;
+                }
+
+                // Проверяем основное окно
+                if (app.WindowHandle != IntPtr.Zero && !Win32Helper.IsWindow(app.WindowHandle))
+                {
+                    System.Diagnostics.Debug.WriteLine($"App {app.Name} main window is dead");
+                    return true;
+                }
+
+                // Для UWP/многооконных приложений проверяем все окна
+                if (app.WindowHandles != null && app.WindowHandles.Count > 0)
+                {
+                    int aliveWindows = 0;
+                    foreach (var hwnd in app.WindowHandles)
+                    {
+                        if (hwnd != IntPtr.Zero && Win32Helper.IsWindow(hwnd))
+                        {
+                            aliveWindows++;
+                        }
+                    }
+
+                    if (aliveWindows == 0)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"App {app.Name} has no alive windows");
+                        return true;
+                    }
+
+                    // Если остались живые окна, приложение еще работает
+                    System.Diagnostics.Debug.WriteLine($"App {app.Name} has {aliveWindows} alive windows");
+                    return false;
+                }
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"IsAppActuallyClosing error for {app.Name}: {ex.Message}");
+                return false; // В случае ошибки считаем что приложение работает
+            }
+
         }
 
         public object ConvertBack(object value, Type targetTypes, object parameter, System.Globalization.CultureInfo culture) => throw new NotImplementedException();
