@@ -1,4 +1,4 @@
-using System.ComponentModel;
+п»їusing System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
 
@@ -68,19 +68,20 @@ namespace PlankWin
                 if (_windowHandle == value) return;
                 _windowHandle = value;
                 OnPropertyChanged();
-                OnPropertyChanged(nameof(ActiveIconTrigger)); // МАГИЯ: Заставляем WPF перерисовать иконку!
+                OnPropertyChanged(nameof(ActiveIconTrigger)); // РњРђР“РРЇ: Р—Р°СЃС‚Р°РІР»СЏРµРј WPF РїРµСЂРµСЂРёСЃРѕРІР°С‚СЊ РёРєРѕРЅРєСѓ!
             }
         }
 
         [JsonIgnore]
-        public DockAppConfig ActiveIconTrigger => this; // Свойство-пустышка для биндинга
+        public DockAppConfig ActiveIconTrigger => this; // РЎРІРѕР№СЃС‚РІРѕ-РїСѓСЃС‚С‹С€РєР° РґР»СЏ Р±РёРЅРґРёРЅРіР°
 
         public void ForceIconUpdate()
         {
-            // Мы меняем триггер, на который подписана иконка в XAML
+            System.Diagnostics.Debug.WriteLine($"рџ”„ FORCE ICON UPDATE called for: {Name}");
+            // РњС‹ РјРµРЅСЏРµРј С‚СЂРёРіРіРµСЂ, РЅР° РєРѕС‚РѕСЂС‹Р№ РїРѕРґРїРёСЃР°РЅР° РёРєРѕРЅРєР° РІ XAML
             OnPropertyChanged(nameof(WindowHandle));
             OnPropertyChanged(nameof(Path));
-            // Если есть специальное свойство для обновления иконки, дергаем и его
+            // Р•СЃР»Рё РµСЃС‚СЊ СЃРїРµС†РёР°Р»СЊРЅРѕРµ СЃРІРѕР№СЃС‚РІРѕ РґР»СЏ РѕР±РЅРѕРІР»РµРЅРёСЏ РёРєРѕРЅРєРё, РґРµСЂРіР°РµРј Рё РµРіРѕ
             OnPropertyChanged(nameof(ActiveIconTrigger));
         }
 

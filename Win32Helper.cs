@@ -215,8 +215,11 @@ namespace PlankWin
         public const int SW_MINIMIZE = 6;
         public const uint WM_CLOSE = 0x0010;
         public const int GWL_EXSTYLE = -20;
-        public const int WS_EX_TRANSPARENT = 0x00000020;
+        public const int GWL_STYLE = -16;
+        public const int WS_POPUP = unchecked((int)0x80000000);
+        public const int WS_EX_TOPMOST = 0x00000008;
         public const int WS_EX_TOOLWINDOW = 0x00000080;
+        public const int WS_EX_TRANSPARENT = 0x00000020;
         public const uint WS_EX_APPWINDOW = 0x00040000;
         public const uint GW_OWNER = 4;
         public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
@@ -358,16 +361,16 @@ namespace PlankWin
         // UWP APPLICATION USER MODEL ID SUPPORT  
         // ==========================================
 
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        public static extern int GetWindowApplicationUserModelId(
-            IntPtr hwnd,
-            ref uint applicationUserModelIdLength,
-            IntPtr applicationUserModelId);
+        //[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        //public static extern int GetWindowApplicationUserModelId(
+        //    IntPtr hwnd,
+        //    ref uint applicationUserModelIdLength,
+        //    IntPtr applicationUserModelId);
 
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-        public static extern int GetProcessApplicationUserModelId(
-            IntPtr hProcess,
-            ref uint applicationUserModelIdLength,
-            IntPtr applicationUserModelId);
+        //[DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        //public static extern int GetProcessApplicationUserModelId(
+        //    IntPtr hProcess,
+        //    ref uint applicationUserModelIdLength,
+        //    IntPtr applicationUserModelId);
     }
 }
