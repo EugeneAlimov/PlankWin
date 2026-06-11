@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using System.Linq;
@@ -6,6 +6,7 @@ using System;
 using System.Windows.Controls;
 using System.Windows.Media.Effects;
 using System.Windows.Media;
+using System.Collections.Generic;
 
 namespace PlankWin
 {
@@ -47,17 +48,17 @@ namespace PlankWin
         }
 
         // =========================================================
-        // ������������ ��������� ������
+        // ПРИГЛУШЕННЫЙ ГЕНЕРАТОР РАДУГИ
         // =========================================================
         private Color GetSpectrumColor(double progress)
         {
-            // progress (0.0 - 1.0) ��������� � Hue (0 - 300 ��������: �� �������� �� �����������)
+            // progress (0.0 - 1.0) переводим в Hue (0 - 300 градусов: от красного до фиолетового)
             double hue = progress * 300.0;
 
             int hi = Convert.ToInt32(Math.Floor(hue / 60)) % 6;
             double f = hue / 60 - Math.Floor(hue / 60);
 
-            // v = 210 (������ 255) ������ ����� ����� �������, "���������" � �� �������� ����
+            // v = 210 (вместо 255) делает цвета более густыми, "неоновыми" и не режущими глаз
             byte v = 210;
             byte p = 0;
             byte q = (byte)Convert.ToInt32(v * (1 - f));
@@ -88,9 +89,9 @@ namespace PlankWin
                     CornerRadius = new CornerRadius(3),
                     Effect = new DropShadowEffect
                     {
-                        BlurRadius = 20,  // ������ ��������
+                        BlurRadius = 20,  // Мягкое размытие
                         ShadowDepth = 10,
-                        Opacity = 0.5     // ������������ ����, ����� �� �������
+                        Opacity = 0.5     // Приглушенная тень, чтобы не слепила
                     }
                 };
 
@@ -118,10 +119,10 @@ namespace PlankWin
                 _glowWindow.Show();
             }
 
-            // ��������� ����: ������ � ���� �����, � � ����
+            // ПРИМЕНЯЕМ ЦВЕТ: Красим и саму линию, и её тень
             if (_glowBorder != null)
             {
-                // ������ ����� ������ ����������, ����� ��� ���������� ��� �����
+                // Делаем линию слегка прозрачной, чтобы она смотрелась как лазер
                 _glowBorder.Background = new SolidColorBrush(Color.FromArgb(230, currentColor.R, currentColor.G, currentColor.B));
                 if (_glowBorder.Effect is DropShadowEffect shadow)
                 {
@@ -129,14 +130,14 @@ namespace PlankWin
                 }
             }
 
-            // ������� ��������� ����� ���� ��������
+            // Плавное появление всего окна свечения
             _glowWindow.Opacity = progress;
 
             if (MainBorder != null && _glowBorder != null)
             {
                 bool isVertical = Settings.Position == DockPosition.Left || Settings.Position == DockPosition.Right;
 
-                // ������: ��������� �� 3 �� 6 ��������
+                // Физика: Утолщение от 3 до 6 пикселей
                 double currentThickness = 3 + (2 * progress);
 
                 _glowBorder.Width = isVertical ? currentThickness : MainBorder.ActualWidth;
@@ -245,54 +246,11 @@ namespace PlankWin
                 case DockPosition.Right: isMouseNearEdge = pt.X >= (screen.Bounds.Right - hoverZone); break;
             }
 
-            bool isOverlapping = _lastOverlappingState;
-
+            // ✅ ГЛАВНОЕ ИСПРАВЛЕНИЕ: Используем улучшенную проверку связанных окон
+            bool isOverlapping = false;
             if (Settings.AutoHide)
             {
-                IntPtr fgHwnd = Win32Helper.GetForegroundWindow();
-                if (fgHwnd != IntPtr.Zero && fgHwnd != new WindowInteropHelper(this).Handle)
-                {
-                    string className = Win32Helper.GetWindowClassName(fgHwnd);
-
-                    bool isIgnoredSystemWindow = className == "LivePreviewSurface" ||
-                                                 className == "ThumbnailDeviceHelperWnd" ||
-                                                 className == "Shell_TrayWnd" ||
-                                                 className == "TrayNotifyWnd" ||
-                                                 className == "NotifyIconOverflowWindow" ||
-                                                 className == "TaskSwitchWnd" ||
-                                                 className == "MultitaskingViewFrame";
-
-                    if (!isIgnoredSystemWindow)
-                    {
-                        var sb = new System.Text.StringBuilder(256);
-                        Win32Helper.GetWindowText(fgHwnd, sb, sb.Capacity);
-
-                        if (sb.ToString() != "LivePreviewSurface")
-                        {
-                            if (className == "Progman" || className == "WorkerW")
-                            {
-                                isOverlapping = false;
-                            }
-                            else if (Win32Helper.IsWindowVisible(fgHwnd) && !Win32Helper.IsIconic(fgHwnd))
-                            {
-                                Win32Helper.GetWindowRect(fgHwnd, out var fgRect);
-                                double fgLeft = fgRect.Left / dpiX; double fgTop = fgRect.Top / dpiY; double fgRight = fgRect.Right / dpiX; double fgBottom = fgRect.Bottom / dpiY;
-
-                                double viewboxW = MainViewbox?.ActualWidth ?? 0; double viewboxH = MainViewbox?.ActualHeight ?? 0;
-                                double visibleW = Math.Max(MainBorder.ActualWidth, viewboxW); double visibleH = Math.Max(MainBorder.ActualHeight, viewboxH);
-
-                                double overlapL = (_shownLeft + ZoomOverflow) - 10; double overlapT = (_shownTop + ZoomOverflow) - 10;
-                                double overlapR = overlapL + visibleW + 20; double overlapB = overlapT + visibleH + 20;
-
-                                isOverlapping = (fgLeft < overlapR && fgRight > overlapL && fgTop < overlapB && fgBottom > overlapT);
-                            }
-                        }
-                    }
-                }
-                else if (fgHwnd == new WindowInteropHelper(this).Handle)
-                {
-                    isOverlapping = false;
-                }
+                isOverlapping = IsAnyRelatedWindowOverlappingPanel();
             }
 
             _lastOverlappingState = isOverlapping;
@@ -381,6 +339,259 @@ namespace PlankWin
             _isHidden = false;
             _visibleTimeMs = 0;
             PositionDock();
+        }
+
+        // ✅ ГЛАВНЫЙ МЕТОД: Проверка связанных окон процесса
+        private bool IsAnyRelatedWindowOverlappingPanel()
+        {
+            try
+            {
+                IntPtr foregroundWindow = Win32Helper.GetForegroundWindow();
+                string windowTitle = "";
+                string className = "";
+
+                // Получаем информацию об активном окне для диагностики
+                var sb = new System.Text.StringBuilder(256);
+                Win32Helper.GetWindowText(foregroundWindow, sb, sb.Capacity);
+                windowTitle = sb.ToString();
+                className = Win32Helper.GetWindowClassName(foregroundWindow);
+
+                //System.Diagnostics.Debug.WriteLine($"🔍 [AUTO-HIDE] Checking foreground window: '{windowTitle}' (class: {className}, handle: {foregroundWindow})");
+
+                // 1. Проверяем основное окно
+                bool foregroundOverlaps = IsWindowOverlappingPanel(foregroundWindow);
+                //System.Diagnostics.Debug.WriteLine($"🔍 [AUTO-HIDE] Foreground window overlaps: {foregroundOverlaps}");
+
+                if (foregroundOverlaps)
+                {
+                    //System.Diagnostics.Debug.WriteLine($"✅ [AUTO-HIDE] Foreground window overlaps panel - returning TRUE");
+                    return true;
+                }
+
+                // 2. УЛУЧШЕННАЯ ЛОГИКА: Более умная проверка связанных окон
+                string foregroundProcessPath = GetProcessExecutablePath(foregroundWindow);
+                //System.Diagnostics.Debug.WriteLine($"🔍 [AUTO-HIDE] Process path: {foregroundProcessPath}");
+
+                if (!string.IsNullOrEmpty(foregroundProcessPath))
+                {
+                    // Проверяем тип процесса для специальной обработки
+                    bool isUwpApp = IsUwpApplication(foregroundProcessPath);
+                    //System.Diagnostics.Debug.WriteLine($"🔍 [AUTO-HIDE] Is UWP app: {isUwpApp}");
+
+                    // Для UWP приложений - более строгий подход
+                    if (isUwpApp)
+                    {
+                        //System.Diagnostics.Debug.WriteLine($"📱 [AUTO-HIDE] UWP app detected - using simplified logic");
+
+                        // У UWP только проверяем foreground окно и его прямого owner
+                        IntPtr uwpOwner = Win32Helper.GetWindow(foregroundWindow, Win32Helper.GW_OWNER);
+                        //System.Diagnostics.Debug.WriteLine($"🔍 [AUTO-HIDE] UWP owner window: {uwpOwner}");
+
+                        if (uwpOwner != IntPtr.Zero && IsWindowOverlappingPanel(uwpOwner))
+                        {
+                            System.Diagnostics.Debug.WriteLine($"✅ [AUTO-HIDE] UWP owner overlaps - returning TRUE");
+                            return true;
+                        }
+
+                        // Для UWP не сканируем все окна процесса - слишком много служебных окон
+                        //System.Diagnostics.Debug.WriteLine($"❌ [AUTO-HIDE] UWP app - no overlap found, returning FALSE");
+                        return false;
+                    }
+
+                    System.Diagnostics.Debug.WriteLine($"🖥️ [AUTO-HIDE] Win32 app detected - using full scan logic");
+
+                    // Для обычных Win32 приложений - полное сканирование связанных окон
+                    var relatedWindows = new List<IntPtr>();
+                    int mainWindowCount = 0;
+
+                    Win32Helper.EnumWindows((hWnd, lParam) =>
+                    {
+                        try
+                        {
+                            if (Win32Helper.IsWindowVisible(hWnd))
+                            {
+                                string windowProcessPath = GetProcessExecutablePath(hWnd);
+                                if (windowProcessPath == foregroundProcessPath)
+                                {
+                                    string winClassName = Win32Helper.GetWindowClassName(hWnd);
+
+                                    // Считаем только значимые окна (не служебные)
+                                    if (!IsSystemOrServiceWindow(winClassName))
+                                    {
+                                        relatedWindows.Add(hWnd);
+
+                                        // Проверяем является ли окно главным
+                                        if (IsMainWindow(hWnd))
+                                        {
+                                            mainWindowCount++;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+                        return true;
+                    }, IntPtr.Zero);
+
+                    //System.Diagnostics.Debug.WriteLine($"🔍 [AUTO-HIDE] Found {relatedWindows.Count} related windows ({mainWindowCount} main windows)");
+
+                    // Проверяем только значимые окна
+                    foreach (var hwnd in relatedWindows)
+                    {
+                        if (IsWindowOverlappingPanel(hwnd))
+                        {
+                            //System.Diagnostics.Debug.WriteLine($"✅ [AUTO-HIDE] Related window {hwnd} overlaps - returning TRUE");
+                            return true;
+                        }
+                    }
+                }
+
+                // 3. ДОПОЛНИТЕЛЬНО: Проверяем owner окно (для popup меню)
+                IntPtr owner = Win32Helper.GetWindow(foregroundWindow, Win32Helper.GW_OWNER);
+                System.Diagnostics.Debug.WriteLine($"🔍 [AUTO-HIDE] General owner check: {owner}");
+
+                if (owner != IntPtr.Zero && IsWindowOverlappingPanel(owner))
+                {
+                    //System.Diagnostics.Debug.WriteLine($"✅ [AUTO-HIDE] Owner window overlaps - returning TRUE");
+                    return true;
+                }
+
+                //System.Diagnostics.Debug.WriteLine($"❌ [AUTO-HIDE] No overlapping windows found - returning FALSE");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                //System.Diagnostics.Debug.WriteLine($"❗ [AUTO-HIDE] ERROR in IsAnyRelatedWindowOverlappingPanel: {ex.Message}");
+                return false;
+            }
+        }
+
+        // ✅ ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
+        private bool IsUwpApplication(string processPath)
+        {
+            return processPath.Contains("WindowsApps", StringComparison.OrdinalIgnoreCase) ||
+                   processPath.Contains("Calculator", StringComparison.OrdinalIgnoreCase) ||
+                   processPath.Contains("SystemSettings", StringComparison.OrdinalIgnoreCase) ||
+                   processPath.Contains("ClockAndCalendar", StringComparison.OrdinalIgnoreCase) ||
+                   processPath.Contains("Microsoft.", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool IsSystemOrServiceWindow(string className)
+        {
+            return className == "ApplicationManager_DesktopShellWindow" ||
+                   className == "WorkerW" ||
+                   className == "Progman" ||
+                   className == "DV2ControlHost" ||
+                   className == "ForegroundStaging" ||
+                   className == "ApplicationManager_ImmersiveShellWindow" ||
+                   className.StartsWith("Windows.UI.Core") ||
+                   className.Contains("InputMethod") ||
+                   className.Contains("IME");
+        }
+
+        private bool IsMainWindow(IntPtr hWnd)
+        {
+            // Простая эвристика для определения главного окна
+            Win32Helper.GetWindowRect(hWnd, out var rect);
+            int width = rect.Right - rect.Left;
+            int height = rect.Bottom - rect.Top;
+
+            // Главные окна обычно больше чем popup/service окна
+            return width > 100 && height > 100;
+        }
+
+        // ✅ ВСПОМОГАТЕЛЬНЫЙ МЕТОД: Проверка перекрытия одного окна с панелью
+        private bool IsWindowOverlappingPanel(IntPtr hWnd)
+        {
+            try
+            {
+                if (hWnd == IntPtr.Zero || !Win32Helper.IsWindow(hWnd) || !Win32Helper.IsWindowVisible(hWnd) || Win32Helper.IsIconic(hWnd))
+                    return false;
+
+                // Исключаем системные окна
+                string className = Win32Helper.GetWindowClassName(hWnd);
+                bool isIgnoredSystemWindow = className == "LivePreviewSurface" ||
+                                             className == "ThumbnailDeviceHelperWnd" ||
+                                             className == "Shell_TrayWnd" ||
+                                             className == "TrayNotifyWnd" ||
+                                             className == "NotifyIconOverflowWindow" ||
+                                             className == "TaskSwitchWnd" ||
+                                             className == "MultitaskingViewFrame" ||
+                                             className == "Progman" ||
+                                             className == "WorkerW";
+
+                if (isIgnoredSystemWindow)
+                    return false;
+
+                // Исключаем собственную панель
+                if (hWnd == new WindowInteropHelper(this).Handle)
+                    return false;
+
+                // Проверка заголовка
+                var sb = new System.Text.StringBuilder(256);
+                Win32Helper.GetWindowText(hWnd, sb, sb.Capacity);
+                if (sb.ToString() == "LivePreviewSurface")
+                    return false;
+
+                // Получаем координаты окна
+                if (!Win32Helper.GetWindowRect(hWnd, out var windowRect))
+                    return false;
+
+                var source = PresentationSource.FromVisual(this);
+                if (source?.CompositionTarget == null)
+                    return false;
+
+                double dpiX = source.CompositionTarget.TransformToDevice.M11;
+                double dpiY = source.CompositionTarget.TransformToDevice.M22;
+
+                double windowLeft = windowRect.Left / dpiX;
+                double windowTop = windowRect.Top / dpiY;
+                double windowRight = windowRect.Right / dpiX;
+                double windowBottom = windowRect.Bottom / dpiY;
+
+                // Получаем координаты области панели
+                double viewboxW = MainViewbox?.ActualWidth ?? 0;
+                double viewboxH = MainViewbox?.ActualHeight ?? 0;
+                double visibleW = Math.Max(MainBorder.ActualWidth, viewboxW);
+                double visibleH = Math.Max(MainBorder.ActualHeight, viewboxH);
+
+                double panelLeft = (_shownLeft + ZoomOverflow) - 10;
+                double panelTop = (_shownTop + ZoomOverflow) - 10;
+                double panelRight = panelLeft + visibleW + 20;
+                double panelBottom = panelTop + visibleH + 20;
+
+                // Проверка пересечения
+                bool isOverlapping = (windowLeft < panelRight && windowRight > panelLeft &&
+                                     windowTop < panelBottom && windowBottom > panelTop);
+
+                return isOverlapping;
+            }
+            catch (Exception ex)
+            {
+                //System.Diagnostics.Debug.WriteLine($"IsWindowOverlappingPanel error for {hWnd}: {ex.Message}");
+                return false;
+            }
+        }
+
+        // ✅ БЫСТРЫЙ МЕТОД: Простое получение пути процесса для auto-hide (без UWP обработки)
+        private string GetProcessPathForAutoHide(IntPtr hWnd)
+        {
+            try
+            {
+                if (hWnd == IntPtr.Zero)
+                    return string.Empty;
+
+                Win32Helper.GetWindowThreadProcessId(hWnd, out uint processId);
+                if (processId == 0)
+                    return string.Empty;
+
+                using var process = System.Diagnostics.Process.GetProcessById((int)processId);
+                return process.MainModule?.FileName ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
         }
     }
 }
