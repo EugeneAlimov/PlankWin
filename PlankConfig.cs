@@ -9,6 +9,13 @@ namespace PlankWin
     public enum DockPosition { Bottom, Top, Left, Right }
     public enum DockAlignment { Center, Start, End }
 
+    // –ежим видимости панели (замен€ет старый булев AutoHide).
+    //  AlwaysVisible Ч панель всегда на экране (резервирование места осмысленно только здесь).
+    //  AutoHide      Ч панель всегда скрыта, выезжает только по подведению курсора к краю.
+    //  SmartHide     Ч панель видна, но пр€четс€ когда активное окно еЄ перекрывает
+    //                  или когда в фокусе рабочий стол (дл€ доступа к €рлыкам).
+    public enum DockVisibilityMode { AlwaysVisible, AutoHide, SmartHide }
+
     public sealed class DockSettings : INotifyPropertyChanged
     {
         // —писок процессов, которые не должны по€вл€тьс€ в доке
@@ -21,7 +28,7 @@ namespace PlankWin
         private DockAlignment _alignment = DockAlignment.Center;
         private bool _isAdaptive = true;
         private bool _reserveScreenSpace = true;
-        private bool _autoHide = false;
+        private DockVisibilityMode _visibilityMode = DockVisibilityMode.AlwaysVisible;
         //private string[] _ignoreProcessNames = Array.Empty<string>();
         private string _targetMonitor = ""; // ѕуста€ строка = ќсновной монитор
 
@@ -181,10 +188,36 @@ namespace PlankWin
             set { if (_reserveScreenSpace != value) { _reserveScreenSpace = value; OnPropertyChanged(); } }
         }
 
+        public DockVisibilityMode VisibilityMode
+        {
+            get => _visibilityMode;
+            set
+            {
+                if (_visibilityMode != value)
+                {
+                    _visibilityMode = value;
+                    OnPropertyChanged();
+                    // ”ведомл€ем и старый мостик, чтобы подписчики на AutoHide тоже среагировали.
+                    OnPropertyChanged(nameof(AutoHide));
+                }
+            }
+        }
+
+        // ¬–≈ћ≈ЌЌџ… ћќ—“»  —ќ¬ћ≈—“»ћќ—“».
+        // —тарый код по всему проекту читает Settings.AutoHide. ѕока он не переведЄн
+        // на VisibilityMode, это вычисл€емое свойство сохран€ет компил€цию и логику:
+        //   AutoHide == true  <=> панель в каком-либо скрывающемс€ режиме (AutoHide или SmartHide)
+        //   AutoHide == false <=> панель всегда видима (AlwaysVisible)
+        // ѕќƒЋ≈∆»“ ”ƒјЋ≈Ќ»ё после перевода всех вызовов на VisibilityMode.
+        [JsonIgnore]
         public bool AutoHide
         {
-            get => _autoHide;
-            set { if (_autoHide != value) { _autoHide = value; OnPropertyChanged(); } }
+            get => _visibilityMode != DockVisibilityMode.AlwaysVisible;
+            set
+            {
+                // —охран€ем старое поведение записи: true -> SmartHide, false -> AlwaysVisible.
+                VisibilityMode = value ? DockVisibilityMode.SmartHide : DockVisibilityMode.AlwaysVisible;
+            }
         }
 
 
@@ -253,6 +286,28 @@ namespace PlankWin
                     settings.IgnoreProcessNames = new System.Collections.ObjectModel.ObservableCollection<string>();
 
                 settings.Thickness = settings.Thickness;
+
+                // === „»—“јя ћ»√–ј÷»я: старый булев AutoHide -> новый VisibilityMode ===
+                // —тарые профили содержат "AutoHide", но не содержат "VisibilityMode".
+                // ќпредел€ем это €вно по JSON и проставл€ем режим детерминированно,
+                // не полага€сь на пор€док применени€ свойств десериализатором.
+                try
+                {
+                    using var doc = JsonDocument.Parse(json);
+                    var root = doc.RootElement;
+                    bool hasVisibilityMode = root.TryGetProperty("VisibilityMode", out _);
+                    bool hasLegacyAutoHide = root.TryGetProperty("AutoHide", out var legacyAutoHideEl);
+
+                    if (!hasVisibilityMode && hasLegacyAutoHide)
+                    {
+                        bool legacyAutoHide = legacyAutoHideEl.ValueKind == JsonValueKind.True;
+                        // true -> SmartHide (старое "умное скрытие"), false -> AlwaysVisible.
+                        settings.VisibilityMode = legacyAutoHide
+                            ? DockVisibilityMode.SmartHide
+                            : DockVisibilityMode.AlwaysVisible;
+                    }
+                }
+                catch { /* если JSON не распарсилс€ как документ Ч оставл€ем значение из десериализации */ }
 
                 return settings;
             }

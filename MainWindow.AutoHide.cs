@@ -20,6 +20,23 @@ namespace PlankWin
         private double _currentGlowProgress = 0;
         private bool _lastOverlappingState = false;
 
+        // ВНЕШНИЙ ЗАПРЕТ ПОКАЗА (задел под будущий API).
+        // Когда true — панель НЕ выезжает даже по подведению курсора к краю.
+        // Предназначен для внешнего управления (например, видеоплеер в полноэкранном
+        // режиме выставит этот флаг, чтобы панель не вылезала поверх видео).
+        // Управляется извне через SetExternalHideSuppression(); по умолчанию выключен.
+        private bool _isSuppressedExternally = false;
+
+        /// <summary>
+        /// Внешний API: запретить/разрешить показ панели по курсору.
+        /// Например, полноэкранный плеер вызывает SetExternalHideSuppression(true)
+        /// на время воспроизведения и SetExternalHideSuppression(false) по выходу.
+        /// </summary>
+        public void SetExternalHideSuppression(bool suppressed)
+        {
+            _isSuppressedExternally = suppressed;
+        }
+
         private void SetupAutoHide()
         {
             if (Settings.AutoHide)
@@ -246,15 +263,38 @@ namespace PlankWin
                 case DockPosition.Right: isMouseNearEdge = pt.X >= (screen.Bounds.Right - hoverZone); break;
             }
 
-            // ✅ ГЛАВНОЕ ИСПРАВЛЕНИЕ: Используем улучшенную проверку связанных окон
-            bool isOverlapping = false;
-            if (Settings.AutoHide)
+            // ВНЕШНИЙ ЗАПРЕТ: если активно внешнее подавление (напр. полноэкранное видео),
+            // подавляем срабатывание вызова по краю — панель не выезжает по курсору.
+            if (_isSuppressedExternally)
+                isMouseNearEdge = false;
+
+            // ============================================================
+            //  ЛОГИКА ТРЁХ РЕЖИМОВ ВИДИМОСТИ
+            // ============================================================
+            //  AlwaysVisible — никогда не прячем (shouldHide = false).
+            //  AutoHide      — всегда спрятана (shouldHide = true), выезжает
+            //                  только по курсору у края (обрабатывается ниже).
+            //  SmartHide     — прячем, если активное окно перекрывает панель
+            //                  ИЛИ если в фокусе рабочий стол (доступ к ярлыкам).
+            //                  Проверяем ТОЛЬКО активное окно (dodge active).
+            bool shouldHide;
+            switch (Settings.VisibilityMode)
             {
-                isOverlapping = IsAnyRelatedWindowOverlappingPanel();
+                case DockVisibilityMode.AlwaysVisible:
+                    shouldHide = false;
+                    break;
+
+                case DockVisibilityMode.AutoHide:
+                    shouldHide = true;
+                    break;
+
+                case DockVisibilityMode.SmartHide:
+                default:
+                    shouldHide = ShouldHideForSmartMode();
+                    break;
             }
 
-            _lastOverlappingState = isOverlapping;
-            bool shouldHide = Settings.AutoHide && isOverlapping;
+            _lastOverlappingState = shouldHide;
 
             if (_isHidden)
             {
@@ -339,6 +379,106 @@ namespace PlankWin
             _isHidden = false;
             _visibleTimeMs = 0;
             PositionDock();
+        }
+
+        // ============================================================
+        //  УМНОЕ СКРЫТИЕ (SmartHide) — чистая логика "dodge active".
+        //  Прячем панель, если выполнено ХОТЯ БЫ ОДНО:
+        //    1) активное (foreground) окно геометрически перекрывает панель;
+        //    2) в фокусе рабочий стол (Progman/WorkerW) — для доступа к ярлыкам.
+        //  Проверяется ТОЛЬКО активное окно. Неактивные окна под панелью
+        //  игнорируются намеренно (пользователь работает в одном окне,
+        //  а под панелью может лежать другое — панель остаётся доступной).
+        // ============================================================
+        private bool ShouldHideForSmartMode()
+        {
+            try
+            {
+                IntPtr foreground = Win32Helper.GetForegroundWindow();
+
+                // Правило 2: фокус на рабочем столе -> прячем (доступ к ярлыкам).
+                if (foreground != IntPtr.Zero)
+                {
+                    string className = Win32Helper.GetWindowClassName(foreground);
+                    if (className == "Progman" || className == "WorkerW")
+                        return true;
+
+                    // Правило 1: активное окно перекрывает панель -> прячем.
+                    // IsWindowOverlappingPanel уже корректно отсекает системные окна
+                    // (включая Progman/WorkerW, трей и т.п.) и делает DPI-коррекцию.
+                    if (IsWindowOverlappingPanel(foreground))
+                        return true;
+                }
+
+                // Правило 3: на мониторе панели НЕТ ни одного видимого неминимизированного
+                // окна (все свёрнуты по одному или скрыты) -> прячем, чтобы дать доступ
+                // к ярлыкам рабочего стола без дополнительного клика по столу.
+                // Проверка выполняется только в этой "пограничной" ветке (когда выше не
+                // сработали правила 1-2), поэтому не нагружает каждый тик таймера.
+                if (!HasAnyVisibleAppWindowOnPanelScreen())
+                    return true;
+
+                // Иначе — есть открытое окно, панель не перекрыта, стол не в фокусе: показываем.
+                return false;
+            }
+            catch
+            {
+                // При любой ошибке безопаснее НЕ прятать (панель остаётся доступной).
+                return false;
+            }
+        }
+
+        // Лёгкая проверка: есть ли хотя бы одно "нормальное" видимое неминимизированное
+        // окно приложения на том же мониторе, где находится панель.
+        // Возвращает true, как только нашли ПЕРВОЕ такое окно (ранний выход — без полного прохода).
+        private bool HasAnyVisibleAppWindowOnPanelScreen()
+        {
+            var panelScreen = System.Windows.Forms.Screen.AllScreens.FirstOrDefault(s => s.DeviceName == _profileName)
+                              ?? System.Windows.Forms.Screen.PrimaryScreen;
+
+            bool found = false;
+
+            Win32Helper.EnumWindows((hWnd, lParam) =>
+            {
+                try
+                {
+                    // Быстрые отсевы (от дешёвых к дорогим):
+                    if (!Win32Helper.IsWindowVisible(hWnd)) return true;   // невидимо
+                    if (Win32Helper.IsIconic(hWnd)) return true;            // свёрнуто
+                    if (IsWindowCloaked(hWnd)) return true;                 // cloaked (UWP в фоне и т.п.)
+                    if (hWnd == new WindowInteropHelper(this).Handle) return true; // сама панель
+
+                    int exStyle = Win32Helper.GetWindowLong(hWnd, Win32Helper.GWL_EXSTYLE);
+                    if ((exStyle & Win32Helper.WS_EX_TOOLWINDOW) != 0) return true; // служебное окно
+
+                    string cls = Win32Helper.GetWindowClassName(hWnd);
+                    if (cls == "Progman" || cls == "WorkerW" || cls == "Shell_TrayWnd" ||
+                        cls == "TrayNotifyWnd" || cls == "Windows.UI.Core.CoreWindow" ||
+                        cls == "XamlExplorerHostIslandWindow" || cls == "NotifyIconOverflowWindow")
+                        return true;
+
+                    // Окно должно иметь ненулевой размер.
+                    if (!Win32Helper.GetWindowRect(hWnd, out var rc)) return true;
+                    if (rc.Right - rc.Left <= 0 || rc.Bottom - rc.Top <= 0) return true;
+
+                    // Окно должно находиться (центром) на мониторе панели.
+                    if (panelScreen != null)
+                    {
+                        int cx = (rc.Left + rc.Right) / 2;
+                        int cy = (rc.Top + rc.Bottom) / 2;
+                        var b = panelScreen.Bounds;
+                        bool onPanelScreen = cx >= b.Left && cx < b.Right && cy >= b.Top && cy < b.Bottom;
+                        if (!onPanelScreen) return true;
+                    }
+
+                    // Нашли нормальное видимое окно — дальше можно не искать.
+                    found = true;
+                    return false; // прекращаем перечисление
+                }
+                catch { return true; }
+            }, IntPtr.Zero);
+
+            return found;
         }
 
         // ✅ ГЛАВНЫЙ МЕТОД: Проверка связанных окон процесса

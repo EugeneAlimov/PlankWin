@@ -25,6 +25,7 @@
 
     <Window.Resources>
         <local:HexToBrushConverter x:Key="HexToBrushConverter" />
+        <local:IsAlwaysVisibleConverter x:Key="IsAlwaysVisibleConverter" />
     </Window.Resources>
 
     <Grid Margin="0">
@@ -73,8 +74,19 @@
                     <StackPanel Margin="15">
                         <TextBlock Text="Главные настройки" FontWeight="Bold" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,10"/>
                         <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="Запускать вместе с Windows" IsChecked="{Binding RunAtStartup}" Margin="0,0,0,8"/>
-                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="Умное скрытие (IntelliHide)" IsChecked="{Binding AutoHide}" Margin="0,0,0,8"/>
-                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="Резервировать место на экране" IsChecked="{Binding ReserveScreenSpace}" Margin="0,0,0,15"/>
+
+                        <TextBlock Text="Режим панели:" Margin="0,0,0,5" Foreground="{DynamicResource MenuTextBrush}"/>
+                        <ComboBox x:Name="CmbVisibilityMode"
+                                  SelectedValuePath="Tag"
+                                  SelectedValue="{Binding VisibilityMode}"
+                                  Margin="0,0,0,8">
+                            <ComboBoxItem Content="Всегда видима" Tag="{x:Static local:DockVisibilityMode.AlwaysVisible}"/>
+                            <ComboBoxItem Content="Автоскрытие" Tag="{x:Static local:DockVisibilityMode.AutoHide}"/>
+                            <ComboBoxItem Content="Умное скрытие" Tag="{x:Static local:DockVisibilityMode.SmartHide}"/>
+                        </ComboBox>
+
+                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="Резервировать место на экране" IsChecked="{Binding ReserveScreenSpace}" Margin="0,0,0,15"
+                                  IsEnabled="{Binding VisibilityMode, Converter={StaticResource IsAlwaysVisibleConverter}}"/>
 
                         <TextBlock Text="Геометрия" FontWeight="Bold" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,10"/>
                         <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="Летающая панель (отступ от края)" IsChecked="{Binding IsFloating}" Margin="0,0,0,8"/>

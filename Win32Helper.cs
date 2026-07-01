@@ -205,8 +205,73 @@ namespace PlankWin
         [DllImport("shell32.dll", SetLastError = true)]
         public static extern int SHGetPropertyStoreForWindow(IntPtr hwnd, ref Guid iid, out IPropertyStore propertyStore);
 
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+        public static extern int SHGetPropertyStoreFromParsingName(
+            string pszPath, IntPtr pbc, int flags, in Guid riid,
+            out IPropertyStore propertyStore);
+
         [DllImport("ole32.dll")]
         public static extern void PropVariantClear(ref PROPVARIANT pvar);
+
+        /// <summary>
+        /// Пытается извлечь AUMID (System.AppUserModel.ID) из ярлыка .lnk.
+        /// Для UWP-ярлыков (Калькулятор, Settings и т.п.) возвращает строку вида
+        /// "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App". Для обычных Win32-ярлыков,
+        /// у которых этого свойства нет, возвращает пустую строку.
+        /// </summary>
+        public static string GetAumidFromShortcut(string lnkPath)
+        {
+            if (string.IsNullOrEmpty(lnkPath)) return string.Empty;
+            IPropertyStore store = null;
+            try
+            {
+                Guid iid = typeof(IPropertyStore).GUID;
+                System.Diagnostics.Debug.WriteLine($"🎯 [AUMID-DIAG] path='{lnkPath}'");
+                // PreserveSig=false -> при ошибке будет исключение, ловим ниже.
+                SHGetPropertyStoreFromParsingName(lnkPath, IntPtr.Zero, 0, in iid, out store);
+                if (store == null) { System.Diagnostics.Debug.WriteLine("🎯 [AUMID-DIAG] store is NULL"); return string.Empty; }
+                System.Diagnostics.Debug.WriteLine("🎯 [AUMID-DIAG] store obtained OK");
+
+                // Перечислим ВСЕ свойства store, чтобы найти, где на самом деле лежит AUMID.
+                try
+                {
+                    store.GetCount(out uint cnt);
+                    System.Diagnostics.Debug.WriteLine($"🎯 [AUMID-DIAG] property count = {cnt}");
+                    for (uint i = 0; i < cnt; i++)
+                    {
+                        store.GetAt(i, out PROPERTYKEY k);
+                        var pvx = new PROPVARIANT();
+                        int hrx = store.GetValue(ref k, out pvx);
+                        string val = "";
+                        if (hrx == 0 && pvx.vt == 31) val = Marshal.PtrToStringUni(pvx.pwszVal) ?? "";
+                        System.Diagnostics.Debug.WriteLine($"🎯 [AUMID-DIAG]   [{i}] fmtid={k.fmtid} pid={k.pid} vt={pvx.vt} val='{val}'");
+                        PropVariantClear(ref pvx);
+                    }
+                }
+                catch (Exception exEnum) { System.Diagnostics.Debug.WriteLine("🎯 [AUMID-DIAG] enum ERR: " + exEnum.Message); }
+
+                // PKEY_AppUserModel_ID = {9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3}, pid 5
+                var pkey = new PROPERTYKEY { fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), pid = 5 };
+                var pv = new PROPVARIANT();
+                int hr = store.GetValue(ref pkey, out pv);
+                System.Diagnostics.Debug.WriteLine($"🎯 [AUMID-DIAG] GetValue(PKEY_AUMID) hr={hr} vt={pv.vt}");
+                if (hr == 0 && pv.vt == 31 /* VT_LPWSTR */)
+                {
+                    string aumid = Marshal.PtrToStringUni(pv.pwszVal) ?? string.Empty;
+                    PropVariantClear(ref pv);
+                    System.Diagnostics.Debug.WriteLine($"🎯 [AUMID-DIAG] AUMID FOUND = '{aumid}'");
+                    return aumid;
+                }
+                PropVariantClear(ref pv);
+                System.Diagnostics.Debug.WriteLine("🎯 [AUMID-DIAG] AUMID not present as VT_LPWSTR");
+            }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("🎯 [AUMID-DIAG] EXCEPTION: " + ex.Message); }
+            finally
+            {
+                if (store != null) Marshal.ReleaseComObject(store);
+            }
+            return string.Empty;
+        }
 
         // ==========================================
         // СТРУКТУРЫ И КОНСТАНТЫ

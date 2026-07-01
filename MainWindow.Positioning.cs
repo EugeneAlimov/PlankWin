@@ -88,6 +88,14 @@ namespace PlankWin
         // 5. Главный метод позиционирования и анимации
         public void PositionDock(bool skipAnimation = false)
         {
+            // ИСПРАВЛЕНИЕ РАССИНХРОНА РЕЗЕРВИРОВАНИЯ:
+            // appbar меняет рабочую область (work area). Раньше UpdateAppBar() вызывался
+            // в КОНЦЕ метода — уже ПОСЛЕ того, как позиция рассчитана по старой work area.
+            // Из-за этого при включении/выключении резервирования панель считала позицию
+            // по неактуальной области и съезжала. Теперь обновляем appbar ПЕРВЫМ делом,
+            // чтобы GetTargetScreenRect() ниже прочитал уже корректную work area.
+            UpdateAppBar();
+
             Rect workArea = GetTargetScreenRect();
 
             bool isVertical = _visualPosition == DockPosition.Left || _visualPosition == DockPosition.Right;
@@ -186,7 +194,7 @@ namespace PlankWin
                 MainBorder.Width = newWidth;
                 MainBorder.Height = newHeight;
 
-                UpdateAppBar();
+                // UpdateAppBar() перенесён в начало PositionDock (синхронизация work area).
                 ForceTopmost();
                 return;
             }
@@ -205,7 +213,7 @@ namespace PlankWin
 
             BeginAnimation(OpacityProperty, new DoubleAnimation(this.Opacity, targetOpacity, duration) { EasingFunction = ease });
 
-            UpdateAppBar();
+            // UpdateAppBar() перенесён в начало PositionDock (синхронизация work area).
             ForceTopmost();
         }
 

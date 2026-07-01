@@ -5,6 +5,7 @@ using System.Windows.Interop;
 using System.Windows;
 using System.Text;
 using System.Threading.Tasks; // Добавили для Task.Delay
+using System.Windows.Threading; // Для DispatcherTimer (страховочный таймер гибридной модели)
 
 namespace PlankWin
 {
@@ -12,6 +13,13 @@ namespace PlankWin
     {
         private int _shellHookMessage;
         private HwndSource? _hwndSource;
+
+        // ГИБРИДНАЯ МОДЕЛЬ: Shell Hook (события) + страховочный таймер.
+        // События иногда промахиваются (многопроцессные приложения вроде Firefox/Chrome:
+        // окно принадлежит дочернему процессу, путь не совпал при первом событии -> окно потеряно).
+        // Таймер раз в ~1с пересматривает окна через RefreshRunningApps() и подбирает пропущенное.
+        // Интервал намеренно большой (не 200мс старого сканера), чтобы не грузить CPU.
+        private DispatcherTimer? _safetyTimer;
 
         private const int HSHELL_WINDOWCREATED = 1;
         private const int HSHELL_WINDOWDESTROYED = 2;
@@ -30,11 +38,19 @@ namespace PlankWin
                 _shellHookMessage = Win32Helper.RegisterWindowMessage("SHELLHOOK");
                 Win32Helper.RegisterShellHookWindow(hwnd);
                 RefreshRunningApps();
+
+                // Запускаем страховочный таймер гибридной модели
+                _safetyTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
+                _safetyTimer.Tick += (s, e) => RefreshRunningApps();
+                _safetyTimer.Start();
             }
         }
 
         private void StopProcessMonitor()
         {
+            _safetyTimer?.Stop();
+            _safetyTimer = null;
+
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
             Win32Helper.DeregisterShellHookWindow(hwnd);
             _hwndSource?.RemoveHook(ShellMonitorWndProc);
@@ -86,27 +102,15 @@ namespace PlankWin
             }
             return IntPtr.Zero;
         }
-
         // ФИКС №2: Добавили параметр retryCount для ожидания загрузки
         private void OnShellWindowCreated(IntPtr hWnd, int retryCount = 0)
         {
-            string className = Win32Helper.GetWindowClassName(hWnd);
-            var sb = new StringBuilder(256);
-            Win32Helper.GetWindowText(hWnd, sb, sb.Capacity);
-            string title = sb.ToString();
-
-            // Debug: Логируем ВСЕ новые окна
-            System.Diagnostics.Debug.WriteLine($"🔍 New window: '{title}' ({className})");
-
             if (!IsValidAppWindow(hWnd))
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Filtered by IsValidAppWindow");
-
                 // Если окно невидимо, но это UWP-коробка, не сдаемся! 
                 // Ждем 200мс и проверяем снова (до 10 попыток).
                 if (retryCount < 10 && Win32Helper.GetWindowClassName(hWnd) == "ApplicationFrameWindow")
                 {
-                    System.Diagnostics.Debug.WriteLine($"🔄 Retrying UWP window in 200ms (attempt {retryCount + 1})");
                     Task.Delay(200).ContinueWith(_ => Dispatcher.InvokeAsync(() => OnShellWindowCreated(hWnd, retryCount + 1)));
                 }
                 return;
@@ -115,21 +119,23 @@ namespace PlankWin
             string exePath = GetProcessExecutablePath(hWnd);
             if (string.IsNullOrEmpty(exePath)) return;
 
-            System.Diagnostics.Debug.WriteLine($"✅ Valid window: '{title}' -> {exePath}");
-
             // Если окно стало видимым, но внутри него еще нет реального приложения 
             // (путь все еще ведет к пустой коробке ApplicationFrameHost), снова ждем.
             if (exePath.Contains("ApplicationFrameHost", StringComparison.OrdinalIgnoreCase))
             {
                 if (retryCount < 10)
                 {
-                    System.Diagnostics.Debug.WriteLine($"🔄 ApplicationFrameHost detected, retrying in 200ms");
                     Task.Delay(200).ContinueWith(_ => Dispatcher.InvokeAsync(() => OnShellWindowCreated(hWnd, retryCount + 1)));
                 }
                 return;
             }
 
             var targetApp = Apps.FirstOrDefault(a => a.Path.Equals(exePath, StringComparison.OrdinalIgnoreCase));
+
+            // ЗАЩИТА ОТ ЧЕХАРДЫ: приложение в процессе удаления (идёт анимация исчезновения).
+            // Страховочный таймер не должен его трогать, иначе оживёт зомби-иконка.
+            if (targetApp != null && targetApp.IsDeleting)
+                return;
 
             if (targetApp != null)
             {
@@ -140,7 +146,6 @@ namespace PlankWin
                     targetApp.RunningInstancesCount = targetApp.WindowHandles.Count;
                     targetApp.IsRunning = true;
                     targetApp.ForceIconUpdate();
-                    System.Diagnostics.Debug.WriteLine($"🔄 Added window to existing app: {targetApp.Name}");
                 }
             }
             else
@@ -158,7 +163,6 @@ namespace PlankWin
                 };
                 newApp.WindowHandles.Add(hWnd);
                 Apps.Add(newApp);
-                System.Diagnostics.Debug.WriteLine($"➕ Added new app: {processName}");
             }
         }
 
@@ -216,49 +220,12 @@ namespace PlankWin
         }
 
         // =========================================================
-        // ФИЛЬТР ДЛЯ POPUP ОКОН (МИНИМАЛЬНОЕ исключение для Calculator)
-        // =========================================================
-        private bool IsContextMenuOrPopup(IntPtr hWnd)
-        {
-            int style = Win32Helper.GetWindowLong(hWnd, Win32Helper.GWL_STYLE);
-            if ((style & Win32Helper.WS_POPUP) != 0)
-            {
-                string className = Win32Helper.GetWindowClassName(hWnd);
-
-                // Только для Calculator CoreWindow - разрешаем несмотря на WS_POPUP
-                if (className == "Windows.UI.Core.CoreWindow")
-                {
-                    return false;
-                }
-
-                return true; // Остальные popup окна фильтруем
-            }
-            return false;
-        }
-
-        // =========================================================
         // ЖЕЛЕЗОБЕТОННЫЙ ФИЛЬТР ОКОН
         // =========================================================
         private bool IsValidAppWindow(IntPtr hWnd)
         {
-            string className = Win32Helper.GetWindowClassName(hWnd);
-
-            // UWP окна часто не проходят стандартные проверки - проверяем их отдельно
-            bool isUwpWindow = (className == "ApplicationFrameWindow" || className == "Windows.UI.Core.CoreWindow");
-
-            if (!isUwpWindow)
-            {
-                if (!Win32Helper.IsWindowVisible(hWnd)) return false;
-                if (IsWindowCloaked(hWnd)) return false;
-            }
-            else
-            {
-                // Для UWP окон более мягкие проверки
-                System.Diagnostics.Debug.WriteLine($"🔍 UWP window check: {className}, Visible: {Win32Helper.IsWindowVisible(hWnd)}, Cloaked: {IsWindowCloaked(hWnd)}");
-            }
-
-            // ФИКС: Проверяем popup окна (кроме Calculator CoreWindow)
-            if (IsContextMenuOrPopup(hWnd)) return false;
+            if (!Win32Helper.IsWindowVisible(hWnd)) return false;
+            if (IsWindowCloaked(hWnd)) return false;
 
             int exStyle = Win32Helper.GetWindowLong(hWnd, Win32Helper.GWL_EXSTYLE);
             if ((exStyle & Win32Helper.WS_EX_TOOLWINDOW) != 0) return false;
@@ -266,11 +233,13 @@ namespace PlankWin
             IntPtr owner = Win32Helper.GetWindow(hWnd, Win32Helper.GW_OWNER);
             if (owner != IntPtr.Zero && (exStyle & Win32Helper.WS_EX_APPWINDOW) == 0) return false;
 
-            // 1. ЧЕРНЫЙ СПИСОК КЛАССОВ (УБРАЛИ Windows.UI.Core.CoreWindow для Calculator)
+            string className = Win32Helper.GetWindowClassName(hWnd);
+
+            // 1. ЧЕРНЫЙ СПИСОК КЛАССОВ (Включая LivePreviewSurface и все элементы таскбара)
             string[] ignoredClasses = {
                 "Progman", "WorkerW", "Shell_TrayWnd", "TrayNotifyWnd",
                 "LivePreviewSurface", "ThumbnailDeviceHelperWnd",
-                "TaskSwitchWnd", "MultitaskingViewFrame",
+                "TaskSwitchWnd", "MultitaskingViewFrame", "Windows.UI.Core.CoreWindow",
                 "XamlExplorerHostIslandWindow", "NotifyIconOverflowWindow"
             };
             if (ignoredClasses.Contains(className)) return false;
@@ -348,17 +317,6 @@ namespace PlankWin
                 Win32Helper.CloseHandle(hProcess);
             }
             return string.Empty;
-        }
-
-        // Метод для проверки cloaked окон
-        private bool IsWindowCloaked(IntPtr hWnd)
-        {
-            const uint DWMWA_CLOAKED = 14;
-            if (Win32Helper.DwmGetWindowAttribute(hWnd, (int)DWMWA_CLOAKED, out int cloakedFlag, sizeof(int)) == 0)
-            {
-                return cloakedFlag != 0;
-            }
-            return false;
         }
     }
 }

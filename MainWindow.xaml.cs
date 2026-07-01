@@ -78,6 +78,15 @@ namespace PlankWin
         private bool _isExternalDragActive = false;
         private DispatcherTimer? _menuWatcherTimer;
 
+        // СТОРОЖЕВОЙ ТАЙМЕР ОТМЕНЫ ВНЕШНЕГО ПЕРЕТАСКИВАНИЯ.
+        // Когда ярлык тянут с рабочего стола на док, а потом ОТПУСКАЮТ вне дока
+        // (передумали, вернули обратно), WPF не присылает доку ни Drop, ни надёжный
+        // DragLeave — drop ушёл в другое приложение. В результате _placeholderApp и
+        // _isExternalDragActive "зависают", и панель замирает. Этот таймер страхует:
+        // если внешний drag активен, но левая кнопка мыши уже отпущена — значит
+        // перетаскивание завершилось где-то снаружи, и мы принудительно сбрасываем состояние.
+        private DispatcherTimer? _dragWatchdogTimer;
+
         public MainWindow(string profileName)
         {
             InitializeComponent();
@@ -250,8 +259,16 @@ namespace PlankWin
                 return;
             }
 
-            if (e.PropertyName == nameof(DockSettings.AutoHide))
+            if (e.PropertyName == nameof(DockSettings.AutoHide) || e.PropertyName == nameof(DockSettings.VisibilityMode))
             {
+                // Резервирование места имеет смысл ТОЛЬКО в режиме "Всегда видима".
+                // При уходе из него — принудительно сбрасываем флаг (галочка в UI станет
+                // неактивной через конвертер, а значение физически выключается здесь).
+                if (Settings.VisibilityMode != DockVisibilityMode.AlwaysVisible && Settings.ReserveScreenSpace)
+                {
+                    Settings.ReserveScreenSpace = false; // вызовет повторный заход сюда уже с ReserveScreenSpace — обработается ниже
+                }
+
                 SetupAutoHide();
             }
             else if (e.PropertyName == nameof(DockSettings.Position) || e.PropertyName == nameof(DockSettings.Alignment))
@@ -328,6 +345,23 @@ namespace PlankWin
             menu.Items.Add(titleItem);
             menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
 
+            // --- Подменю "Режим панели" (три взаимоисключающих режима) ---
+            var modeMenu = new System.Windows.Forms.ToolStripMenuItem("Режим панели");
+
+            var modeAlways = new System.Windows.Forms.ToolStripMenuItem("Всегда видима");
+            var modeAuto = new System.Windows.Forms.ToolStripMenuItem("Автоскрытие");
+            var modeSmart = new System.Windows.Forms.ToolStripMenuItem("Умное скрытие");
+
+            modeAlways.Click += (s, args) => { Settings.VisibilityMode = DockVisibilityMode.AlwaysVisible; };
+            modeAuto.Click += (s, args) => { Settings.VisibilityMode = DockVisibilityMode.AutoHide; };
+            modeSmart.Click += (s, args) => { Settings.VisibilityMode = DockVisibilityMode.SmartHide; };
+
+            modeMenu.DropDownItems.Add(modeAlways);
+            modeMenu.DropDownItems.Add(modeAuto);
+            modeMenu.DropDownItems.Add(modeSmart);
+            menu.Items.Add(modeMenu);
+            menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+
             var forceHideItem = new System.Windows.Forms.ToolStripMenuItem("Принудительно скрыть панель");
             forceHideItem.CheckOnClick = true;
             forceHideItem.CheckedChanged += (s, args) =>
@@ -342,6 +376,16 @@ namespace PlankWin
             var exitItem = new System.Windows.Forms.ToolStripMenuItem("Выход");
             exitItem.Click += (s, args) => { _allowClose = true; Application.Current.Shutdown(); };
             menu.Items.Add(exitItem);
+
+            // При каждом открытии меню — отмечаем текущий режим точкой (актуально, даже
+            // если режим сменили через окно настроек) и синхронизируем галочку force-hide.
+            menu.Opening += (s, args) =>
+            {
+                modeAlways.Checked = Settings.VisibilityMode == DockVisibilityMode.AlwaysVisible;
+                modeAuto.Checked = Settings.VisibilityMode == DockVisibilityMode.AutoHide;
+                modeSmart.Checked = Settings.VisibilityMode == DockVisibilityMode.SmartHide;
+                forceHideItem.Checked = _isForceHidden;
+            };
 
             _trayIcon.ContextMenuStrip = menu;
             _trayIcon.Visible = true;
@@ -779,7 +823,20 @@ namespace PlankWin
             UpdateDragGhost(firstFile);
 
             string checkPath = firstFile;
-            if (firstFile.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase)) checkPath = PlankWin.Win32Helper.ResolveShortcut(firstFile, out _);
+            if (firstFile.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
+            {
+                checkPath = PlankWin.Win32Helper.ResolveShortcut(firstFile, out _);
+
+                // UWP-ярлык: ResolveShortcut пуст -> берём AUMID, чтобы checkPath совпадал
+                // с тем, что сохранит HandleExternalDrop (shell:AppsFolder\AUMID),
+                // иначе повторное перетаскивание того же UWP не распознаётся как дубликат.
+                if (string.IsNullOrEmpty(checkPath))
+                {
+                    string aumid = PlankWin.Win32Helper.GetAumidFromShortcut(firstFile);
+                    if (!string.IsNullOrEmpty(aumid))
+                        checkPath = "shell:AppsFolder\\" + aumid;
+                }
+            }
             var existingApp = System.Linq.Enumerable.FirstOrDefault(Apps, a => a != null && !a.IsPlaceholder && string.Equals(a.Path, checkPath, StringComparison.OrdinalIgnoreCase));
 
             int targetIndex = CalculateTargetDropIndex();
@@ -800,6 +857,7 @@ namespace PlankWin
             if (!_isExternalDragActive)
             {
                 _isExternalDragActive = true;
+                StartDragWatchdog();
                 _placeholderApp = new DockAppConfig { Name = string.Empty, Path = checkPath, IsDynamic = false, IsRunning = false, IsPlaceholder = true };
 
                 int safeInsert = Math.Clamp(targetIndex, 0, Apps.Count);
@@ -846,7 +904,29 @@ namespace PlankWin
                     string appName = System.IO.Path.GetFileNameWithoutExtension(file);
 
                     if (file.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
+                    {
                         resolvedPath = PlankWin.Win32Helper.ResolveShortcut(file, out resolvedArgs);
+
+                        // UWP-ярлык (Калькулятор, Settings и т.п.) не имеет обычного пути к exe —
+                        // ResolveShortcut возвращает пусто. В этом случае извлекаем AUMID из ярлыка
+                        // и формируем путь shell:AppsFolder\AUMID, который наш код запуска
+                        // (Process.Start с UseShellExecute) и конвертер иконок уже понимают.
+                        if (string.IsNullOrEmpty(resolvedPath))
+                        {
+                            string aumid = PlankWin.Win32Helper.GetAumidFromShortcut(file);
+                            if (!string.IsNullOrEmpty(aumid))
+                                resolvedPath = "shell:AppsFolder\\" + aumid;
+                        }
+                    }
+
+                    // Отклоняем то, что не удалось разрешить ни в путь к exe, ни в AUMID
+                    // (не создаём пустую иконку, которая потом падает с "file name has not been provided").
+                    if (string.IsNullOrEmpty(resolvedPath))
+                    {
+                        CleanupExternalDrag();
+                        e.Handled = true;
+                        return;
+                    }
 
                     bool alreadyExists = Apps.Any(a => !a.IsPlaceholder && string.Equals(a.Path, resolvedPath, StringComparison.OrdinalIgnoreCase));
 
@@ -904,6 +984,8 @@ namespace PlankWin
 
         private void CleanupExternalDrag()
         {
+            StopDragWatchdog();
+
             if (_dragGhost != null) { _dragGhost.Close(); _dragGhost = null; }
 
             if (_placeholderApp != null)
@@ -925,6 +1007,65 @@ namespace PlankWin
             {
                 _isExternalDragActive = false;
                 PositionDock(skipAnimation: false);
+            }
+        }
+
+        // Запускает сторожевой таймер на время внешнего перетаскивания.
+        private void StartDragWatchdog()
+        {
+            if (_dragWatchdogTimer == null)
+            {
+                _dragWatchdogTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+                _dragWatchdogTimer.Tick += DragWatchdog_Tick;
+            }
+            _dragWatchdogTimer.Start();
+        }
+
+        private void StopDragWatchdog()
+        {
+            _dragWatchdogTimer?.Stop();
+        }
+
+        private void DragWatchdog_Tick(object? sender, EventArgs e)
+        {
+            // Если внешний drag уже не активен — таймеру делать нечего.
+            if (!_isExternalDragActive && _placeholderApp == null)
+            {
+                StopDragWatchdog();
+                return;
+            }
+
+            // Левая кнопка мыши отпущена (старший бит == 0)?
+            // Значит перетаскивание завершилось — возможно, дропом ВНЕ дока,
+            // и наш обработчик Drop не сработал. Подстраховываемся и чистим состояние.
+            bool leftButtonDown = (PlankWin.Win32Helper.GetAsyncKeyState(0x01) & 0x8000) != 0;
+            if (!leftButtonDown)
+            {
+                CleanupExternalDrag();
+                return;
+            }
+
+            // Курсор вышел за пределы ОКНА дока, но кнопка ещё нажата?
+            // Значит пользователь "передумал" и тащит ярлык обратно на рабочий стол.
+            // Границей служит прямоугольник всего окна (а не видимого стекла) — пока курсор
+            // над окном, система не показывает запретный курсор, призрак живёт; как только
+            // курсор покинул окно целиком — убираем НАШИ артефакты (призрак, placeholder),
+            // оставляя только системное перетаскивание Windows (нативное таскание по столу).
+            PlankWin.Win32Helper.GetCursorPos(out var pt);
+            double dpiX = 1.0, dpiY = 1.0;
+            var src = PresentationSource.FromVisual(this);
+            if (src?.CompositionTarget != null) { dpiX = src.CompositionTarget.TransformToDevice.M11; dpiY = src.CompositionTarget.TransformToDevice.M22; }
+            double sx = pt.X / dpiX, sy = pt.Y / dpiY;
+
+            // Прямоугольник окна дока в WPF-координатах.
+            double winLeft = this.Left;
+            double winTop = this.Top;
+            double winRight = this.Left + this.ActualWidth;
+            double winBottom = this.Top + this.ActualHeight;
+
+            if (sx < winLeft || sx > winRight || sy < winTop || sy > winBottom)
+            {
+                CleanupExternalDrag();
             }
         }
 
