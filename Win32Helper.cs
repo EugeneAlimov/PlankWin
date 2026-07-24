@@ -29,6 +29,10 @@ namespace PlankWin
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
         [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
 
@@ -210,6 +214,11 @@ namespace PlankWin
             string pszPath, IntPtr pbc, int flags, in Guid riid,
             out IPropertyStore propertyStore);
 
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+        public static extern void SHGetNameFromIDList(
+            IntPtr pidl, uint sigdnName,
+            [MarshalAs(UnmanagedType.LPWStr)] out string ppszName);
+
         [DllImport("ole32.dll")]
         public static extern void PropVariantClear(ref PROPVARIANT pvar);
 
@@ -222,54 +231,152 @@ namespace PlankWin
         public static string GetAumidFromShortcut(string lnkPath)
         {
             if (string.IsNullOrEmpty(lnkPath)) return string.Empty;
-            IPropertyStore store = null;
+            IntPtr pidl = IntPtr.Zero;
+            object linkObj = null;
+            try
+            {
+                // Загружаем .lnk и берём его ЦЕЛЕВОЙ PIDL. Для UWP-ярлыка цель указывает
+                // в AppsFolder, и SHGetNameFromIDList даёт разбираемое имя вида
+                // "...\Microsoft.WindowsCalculator_8wekyb3d8bbwe!App" — обычную строку,
+                // без чтения PROPVARIANT.
+                linkObj = new ShellLink();
+                ((IPersistFile)linkObj).Load(lnkPath, 0);
+                ((IShellLink)linkObj).GetIDList(out pidl);
+                if (pidl == IntPtr.Zero) return string.Empty;
+
+                // SIGDN_DESKTOPABSOLUTEPARSING = 0x80028000
+                SHGetNameFromIDList(pidl, 0x80028000, out string name);
+                if (string.IsNullOrEmpty(name)) return string.Empty;
+
+                // AUMID — последний сегмент после '\' и содержит '!'.
+                // Для обычных exe-ярлыков имя будет путём к файлу (без '!') -> отбрасываем.
+                int slash = name.LastIndexOf('\\');
+                string candidate = slash >= 0 ? name.Substring(slash + 1) : name;
+                return candidate.Contains('!') ? candidate : string.Empty;
+            }
+            catch { return string.Empty; }
+            finally
+            {
+                if (pidl != IntPtr.Zero) ILFree(pidl);
+                if (linkObj != null) Marshal.ReleaseComObject(linkObj);
+            }
+        }
+
+        /// <summary>
+        /// Извлекает AUMID у ЗАПУЩЕННОГО UWP-окна (например, при запуске Калькулятора
+        /// с обычного ярлыка). Спускается с рамки ApplicationFrameWindow к реальному
+        /// CoreWindow, берёт его процесс и читает AUMID строковым API GetApplicationUserModelId
+        /// (без PROPVARIANT). Для обычных Win32-окон возвращает пустую строку.
+        /// </summary>
+        public static string GetAumidFromWindow(IntPtr hWnd)
+        {
+            IntPtr frameHwnd = hWnd;
+            try
+            {
+                if (GetWindowClassName(hWnd) == "ApplicationFrameWindow")
+                {
+                    IntPtr real = IntPtr.Zero;
+                    EnumChildWindows(hWnd, (child, p) =>
+                    {
+                        if (GetWindowClassName(child) == "Windows.UI.Core.CoreWindow") { real = child; return false; }
+                        return true;
+                    }, IntPtr.Zero);
+                    if (real != IntPtr.Zero) hWnd = real;
+                }
+
+                GetWindowThreadProcessId(hWnd, out uint pid);
+                if (pid != 0)
+                {
+                    IntPtr hProc = OpenProcess(0x1000, false, pid); // PROCESS_QUERY_LIMITED_INFORMATION
+                    if (hProc != IntPtr.Zero)
+                    {
+                        try
+                        {
+                            uint len = 512;
+                            var sb = new StringBuilder((int)len);
+                            int rc = GetApplicationUserModelId(hProc, ref len, sb);
+                            if (rc == 0)
+                            {
+                                string byProc = sb.ToString();
+                                if (!string.IsNullOrEmpty(byProc)) return byProc;
+                            }
+                        }
+                        finally { CloseHandle(hProc); }
+                    }
+                }
+            }
+            catch { }
+
+            // ЗАПАСНОЙ ПУТЬ (свёрнутый UWP): у свёрнутого/приостановленного приложения
+            // дочернего CoreWindow внутри рамки нет, а процесс рамки — ApplicationFrameHost.exe.
+            // Но CoreWindow приложения продолжает существовать как ОТДЕЛЬНОЕ окно верхнего
+            // уровня с тем же заголовком и живым процессом приложения. Находим его по
+            // заголовку и берём AUMID у его процесса.
+            try
+            {
+                var sbFrame = new StringBuilder(256);
+                GetWindowText(frameHwnd, sbFrame, sbFrame.Capacity);
+                string frameTitle = sbFrame.ToString();
+
+                if (!string.IsNullOrEmpty(frameTitle))
+                {
+                    string found = string.Empty;
+                    EnumWindows((h, l) =>
+                    {
+                        if (GetWindowClassName(h) != "Windows.UI.Core.CoreWindow") return true;
+
+                        var sbCore = new StringBuilder(256);
+                        GetWindowText(h, sbCore, sbCore.Capacity);
+                        if (!string.Equals(sbCore.ToString(), frameTitle, StringComparison.Ordinal)) return true;
+
+                        GetWindowThreadProcessId(h, out uint corePid);
+                        if (corePid == 0) return true;
+
+                        IntPtr hCore = OpenProcess(0x1000, false, corePid);
+                        if (hCore == IntPtr.Zero) return true;
+                        try
+                        {
+                            uint len2 = 512;
+                            var sb2 = new StringBuilder((int)len2);
+                            if (GetApplicationUserModelId(hCore, ref len2, sb2) == 0)
+                            {
+                                string a = sb2.ToString();
+                                if (!string.IsNullOrEmpty(a)) { found = a; return false; }
+                            }
+                        }
+                        finally { CloseHandle(hCore); }
+                        return true;
+                    }, IntPtr.Zero);
+
+                    if (!string.IsNullOrEmpty(found)) return found;
+                }
+            }
+            catch { }
+
+            // Дополнительно: оконное свойство System.AppUserModel.ID (для окон, которые его задают).
             try
             {
                 Guid iid = typeof(IPropertyStore).GUID;
-                System.Diagnostics.Debug.WriteLine($"🎯 [AUMID-DIAG] path='{lnkPath}'");
-                // PreserveSig=false -> при ошибке будет исключение, ловим ниже.
-                SHGetPropertyStoreFromParsingName(lnkPath, IntPtr.Zero, 0, in iid, out store);
-                if (store == null) { System.Diagnostics.Debug.WriteLine("🎯 [AUMID-DIAG] store is NULL"); return string.Empty; }
-                System.Diagnostics.Debug.WriteLine("🎯 [AUMID-DIAG] store obtained OK");
-
-                // Перечислим ВСЕ свойства store, чтобы найти, где на самом деле лежит AUMID.
-                try
+                int hr = SHGetPropertyStoreForWindow(frameHwnd, ref iid, out IPropertyStore store);
+                if (hr == 0 && store != null)
                 {
-                    store.GetCount(out uint cnt);
-                    System.Diagnostics.Debug.WriteLine($"🎯 [AUMID-DIAG] property count = {cnt}");
-                    for (uint i = 0; i < cnt; i++)
+                    try
                     {
-                        store.GetAt(i, out PROPERTYKEY k);
-                        var pvx = new PROPVARIANT();
-                        int hrx = store.GetValue(ref k, out pvx);
-                        string val = "";
-                        if (hrx == 0 && pvx.vt == 31) val = Marshal.PtrToStringUni(pvx.pwszVal) ?? "";
-                        System.Diagnostics.Debug.WriteLine($"🎯 [AUMID-DIAG]   [{i}] fmtid={k.fmtid} pid={k.pid} vt={pvx.vt} val='{val}'");
-                        PropVariantClear(ref pvx);
+                        var pkey = new PROPERTYKEY { fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), pid = 5 };
+                        var pv = new PROPVARIANT();
+                        hr = store.GetValue(ref pkey, out pv);
+                        if (hr == 0 && pv.vt == 31 /* VT_LPWSTR */)
+                        {
+                            string aumid = Marshal.PtrToStringUni(pv.pwszVal) ?? string.Empty;
+                            PropVariantClear(ref pv);
+                            return aumid;
+                        }
+                        PropVariantClear(ref pv);
                     }
+                    finally { Marshal.ReleaseComObject(store); }
                 }
-                catch (Exception exEnum) { System.Diagnostics.Debug.WriteLine("🎯 [AUMID-DIAG] enum ERR: " + exEnum.Message); }
-
-                // PKEY_AppUserModel_ID = {9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3}, pid 5
-                var pkey = new PROPERTYKEY { fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), pid = 5 };
-                var pv = new PROPVARIANT();
-                int hr = store.GetValue(ref pkey, out pv);
-                System.Diagnostics.Debug.WriteLine($"🎯 [AUMID-DIAG] GetValue(PKEY_AUMID) hr={hr} vt={pv.vt}");
-                if (hr == 0 && pv.vt == 31 /* VT_LPWSTR */)
-                {
-                    string aumid = Marshal.PtrToStringUni(pv.pwszVal) ?? string.Empty;
-                    PropVariantClear(ref pv);
-                    System.Diagnostics.Debug.WriteLine($"🎯 [AUMID-DIAG] AUMID FOUND = '{aumid}'");
-                    return aumid;
-                }
-                PropVariantClear(ref pv);
-                System.Diagnostics.Debug.WriteLine("🎯 [AUMID-DIAG] AUMID not present as VT_LPWSTR");
             }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("🎯 [AUMID-DIAG] EXCEPTION: " + ex.Message); }
-            finally
-            {
-                if (store != null) Marshal.ReleaseComObject(store);
-            }
+            catch { }
             return string.Empty;
         }
 
@@ -355,6 +462,17 @@ namespace PlankWin
 
         [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("000214F9-0000-0000-C000-000000000046")]
         public interface IShellLink { void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszFile, int cchMaxPath, out IntPtr pfd, int fFlags); void GetIDList(out IntPtr ppidl); void SetIDList(IntPtr pidl); void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszName, int cchMaxName); void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName); void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszDir, int cchMaxPath); void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir); void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszArgs, int cchMaxPath); void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs); void GetHotkey(out short pwHotkey); void SetHotkey(short wHotkey); void GetShowCmd(out int piShowCmd); void SetShowCmd(int iShowCmd); void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszIconPath, int cchIconPath, out int piIcon); void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon); void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, int dwReserved); void Resolve(IntPtr hwnd, int fFlags); void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile); }
+
+        [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("0000010B-0000-0000-C000-000000000046")]
+        public interface IPersistFile
+        {
+            void GetClassID(out Guid pClassID);
+            [PreserveSig] int IsDirty();
+            void Load([MarshalAs(UnmanagedType.LPWStr)] string pszFileName, uint dwMode);
+            void Save([MarshalAs(UnmanagedType.LPWStr)] string pszFileName, [MarshalAs(UnmanagedType.Bool)] bool fRemember);
+            void SaveCompleted([MarshalAs(UnmanagedType.LPWStr)] string pszFileName);
+            void GetCurFile([MarshalAs(UnmanagedType.LPWStr)] out string ppszFileName);
+        }
 
         public static string ResolveShortcut(string shortcutPath, out string arguments)
         {

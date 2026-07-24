@@ -45,6 +45,7 @@ namespace PlankWin
         }
 
         private bool _isRunning;
+        [JsonIgnore]
         public bool IsRunning
         {
             get => _isRunning;
@@ -52,6 +53,7 @@ namespace PlankWin
         }
 
         private int _runningInstancesCount;
+        [JsonIgnore]
         public int RunningInstancesCount
         {
             get => _runningInstancesCount;

@@ -612,7 +612,11 @@ namespace PlankWin
         {
             if (sender is MenuItem menuItem && menuItem.DataContext is DockAppConfig app && app.IsRunning && app.WindowHandle != IntPtr.Zero)
             {
-                PlankWin.Win32Helper.SendMessage(app.WindowHandle, PlankWin.Win32Helper.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                // PostMessage, а не SendMessage: SendMessage ЖДЁТ обработки сообщения целевым
+                // окном. Если приложение приостановлено (свёрнутый UWP) или показывает диалог
+                // «сохранить изменения?», ответа нет — и UI-поток дока зависает намертво.
+                // PostMessage кладёт сообщение в очередь окна и сразу возвращается.
+                PlankWin.Win32Helper.PostMessage(app.WindowHandle, PlankWin.Win32Helper.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
             }
 
             if (_activeIconMenu != null) _activeIconMenu.IsOpen = false;
@@ -823,20 +827,7 @@ namespace PlankWin
             UpdateDragGhost(firstFile);
 
             string checkPath = firstFile;
-            if (firstFile.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
-            {
-                checkPath = PlankWin.Win32Helper.ResolveShortcut(firstFile, out _);
-
-                // UWP-ярлык: ResolveShortcut пуст -> берём AUMID, чтобы checkPath совпадал
-                // с тем, что сохранит HandleExternalDrop (shell:AppsFolder\AUMID),
-                // иначе повторное перетаскивание того же UWP не распознаётся как дубликат.
-                if (string.IsNullOrEmpty(checkPath))
-                {
-                    string aumid = PlankWin.Win32Helper.GetAumidFromShortcut(firstFile);
-                    if (!string.IsNullOrEmpty(aumid))
-                        checkPath = "shell:AppsFolder\\" + aumid;
-                }
-            }
+            if (firstFile.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase)) checkPath = PlankWin.Win32Helper.ResolveShortcut(firstFile, out _);
             var existingApp = System.Linq.Enumerable.FirstOrDefault(Apps, a => a != null && !a.IsPlaceholder && string.Equals(a.Path, checkPath, StringComparison.OrdinalIgnoreCase));
 
             int targetIndex = CalculateTargetDropIndex();
@@ -892,6 +883,49 @@ namespace PlankWin
 
         private void HandleExternalDrop(object sender, DragEventArgs e)
         {
+            // === ВРЕМЕННАЯ ДИАГНОСТИКА UWP DRAG-IN ===
+            // Выводим все форматы данных перетаскивания и их содержимое, чтобы понять,
+            // откуда брать AUMID для UWP-приложений (Калькулятор и т.п.).
+            try
+            {
+                var formats = e.Data.GetFormats();
+                System.Diagnostics.Debug.WriteLine("🔽 [DROP-DIAG] formats: " + string.Join(", ", formats));
+                foreach (var fmt in formats)
+                {
+                    try
+                    {
+                        var data = e.Data.GetData(fmt);
+                        if (data is string[] arr)
+                            System.Diagnostics.Debug.WriteLine($"   [{fmt}] string[]: {string.Join(" | ", arr)}");
+                        else if (data is string str)
+                            System.Diagnostics.Debug.WriteLine($"   [{fmt}] string: {str}");
+                        else if (data is System.IO.MemoryStream ms)
+                        {
+                            var bytes = ms.ToArray();
+                            string asText = System.Text.Encoding.Unicode.GetString(bytes).Replace("\0", "·");
+                            System.Diagnostics.Debug.WriteLine($"   [{fmt}] stream({bytes.Length}b): {asText}");
+                        }
+                        else
+                            System.Diagnostics.Debug.WriteLine($"   [{fmt}] type: {data?.GetType().Name ?? "null"}");
+                    }
+                    catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"   [{fmt}] ERR: {ex.Message}"); }
+                }
+
+                // Если затащили .lnk — покажем, что из него достаёт ResolveShortcut.
+                if (e.Data.GetData(DataFormats.FileDrop) is string[] dbgFiles && dbgFiles.Length > 0)
+                {
+                    string f0 = dbgFiles[0];
+                    if (f0.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string rp = PlankWin.Win32Helper.ResolveShortcut(f0, out string ra);
+                        System.Diagnostics.Debug.WriteLine($"   [LNK] file={f0}");
+                        System.Diagnostics.Debug.WriteLine($"   [LNK] ResolveShortcut.TargetPath='{rp}' (empty={string.IsNullOrEmpty(rp)}), Args='{ra}'");
+                    }
+                }
+            }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("🔽 [DROP-DIAG] ERR: " + ex.Message); }
+            // === КОНЕЦ ДИАГНОСТИКИ ===
+
             if (e.Data.GetData(DataFormats.FileDrop) is string[] files && files.Length > 0)
             {
                 bool needsSave = false;
@@ -904,29 +938,7 @@ namespace PlankWin
                     string appName = System.IO.Path.GetFileNameWithoutExtension(file);
 
                     if (file.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
-                    {
                         resolvedPath = PlankWin.Win32Helper.ResolveShortcut(file, out resolvedArgs);
-
-                        // UWP-ярлык (Калькулятор, Settings и т.п.) не имеет обычного пути к exe —
-                        // ResolveShortcut возвращает пусто. В этом случае извлекаем AUMID из ярлыка
-                        // и формируем путь shell:AppsFolder\AUMID, который наш код запуска
-                        // (Process.Start с UseShellExecute) и конвертер иконок уже понимают.
-                        if (string.IsNullOrEmpty(resolvedPath))
-                        {
-                            string aumid = PlankWin.Win32Helper.GetAumidFromShortcut(file);
-                            if (!string.IsNullOrEmpty(aumid))
-                                resolvedPath = "shell:AppsFolder\\" + aumid;
-                        }
-                    }
-
-                    // Отклоняем то, что не удалось разрешить ни в путь к exe, ни в AUMID
-                    // (не создаём пустую иконку, которая потом падает с "file name has not been provided").
-                    if (string.IsNullOrEmpty(resolvedPath))
-                    {
-                        CleanupExternalDrag();
-                        e.Handled = true;
-                        return;
-                    }
 
                     bool alreadyExists = Apps.Any(a => !a.IsPlaceholder && string.Equals(a.Path, resolvedPath, StringComparison.OrdinalIgnoreCase));
 

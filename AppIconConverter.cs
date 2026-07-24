@@ -328,6 +328,14 @@ namespace PlankWin
                         }
 
                         string aumid = GetAumidRobust(hwnd, realHwnd);
+
+                        // Свёрнутый (приостановленный) UWP: дочернего CoreWindow в рамке нет,
+                        // поэтому GetAumidRobust возвращает пусто, и ниже targetPath подменился бы
+                        // на ApplicationFrameHost.exe — то есть на иконку-заглушку.
+                        // Берём AUMID надёжным способом (по парному CoreWindow).
+                        if (string.IsNullOrEmpty(aumid))
+                            aumid = Win32Helper.GetAumidFromWindow(hwnd);
+
                         if (!string.IsNullOrEmpty(aumid))
                         {
                             // Для UWP ПРАВИЛЬНЫЙ ключ кэша - это AUMID (не путь с версией пакета).

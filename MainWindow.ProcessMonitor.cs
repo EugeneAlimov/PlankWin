@@ -39,9 +39,11 @@ namespace PlankWin
                 Win32Helper.RegisterShellHookWindow(hwnd);
                 RefreshRunningApps();
 
-                // Запускаем страховочный таймер гибридной модели
+                // Запускаем страховочный таймер гибридной модели.
+                // Сначала убираем закрытые окна (события destroy у многопроцессных
+                // приложений вроде Claude/Electron ненадёжны), затем подбираем новые.
                 _safetyTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
-                _safetyTimer.Tick += (s, e) => RefreshRunningApps();
+                _safetyTimer.Tick += (s, e) => { PruneDeadWindows(); RefreshRunningApps(); };
                 _safetyTimer.Start();
             }
         }
@@ -121,16 +123,39 @@ namespace PlankWin
 
             // Если окно стало видимым, но внутри него еще нет реального приложения 
             // (путь все еще ведет к пустой коробке ApplicationFrameHost), снова ждем.
+            // ИСКЛЮЧЕНИЕ: СВЁРНУТЫЙ UWP. У него дочернего CoreWindow нет (приложение
+            // приостановлено), поэтому путь ВСЕГДА будет ApplicationFrameHost — сколько ни жди.
+            // AUMID при этом читается по парному CoreWindow, и его достаточно для опознания.
+            // Условие намеренно узкое (только свёрнутые), чтобы не пропускать служебные окна.
             if (exePath.Contains("ApplicationFrameHost", StringComparison.OrdinalIgnoreCase))
             {
-                if (retryCount < 10)
+                string frameAumid = Win32Helper.IsIconic(hWnd)
+                    ? Win32Helper.GetAumidFromWindow(hWnd)
+                    : string.Empty;
+
+                if (string.IsNullOrEmpty(frameAumid))
                 {
-                    Task.Delay(200).ContinueWith(_ => Dispatcher.InvokeAsync(() => OnShellWindowCreated(hWnd, retryCount + 1)));
+                    if (retryCount < 10)
+                    {
+                        Task.Delay(200).ContinueWith(_ => Dispatcher.InvokeAsync(() => OnShellWindowCreated(hWnd, retryCount + 1)));
+                    }
+                    return;
                 }
-                return;
             }
 
-            var targetApp = Apps.FirstOrDefault(a => a.Path.Equals(exePath, StringComparison.OrdinalIgnoreCase));
+            // Для UWP-окна идентификатором делаем стабильный shell:AppsFolder\<AUMID>,
+            // а не сырой путь к exe внутри WindowsApps. Тогда после закрепления/закрытия
+            // иконка достаётся (конвертер это умеет), запуск идёт через активацию по AUMID,
+            // и запись совпадает с закреплением того же UWP через drag-in (без дубля кнопок).
+            string identityPath = exePath;
+            if (Win32Helper.GetWindowClassName(hWnd) == "ApplicationFrameWindow")
+            {
+                string winAumid = Win32Helper.GetAumidFromWindow(hWnd);
+                if (!string.IsNullOrEmpty(winAumid))
+                    identityPath = "shell:AppsFolder\\" + winAumid;
+            }
+
+            var targetApp = Apps.FirstOrDefault(a => a.Path.Equals(identityPath, StringComparison.OrdinalIgnoreCase));
 
             // ЗАЩИТА ОТ ЧЕХАРДЫ: приложение в процессе удаления (идёт анимация исчезновения).
             // Страховочный таймер не должен его трогать, иначе оживёт зомби-иконка.
@@ -151,10 +176,22 @@ namespace PlankWin
             else
             {
                 string processName = System.IO.Path.GetFileNameWithoutExtension(exePath);
+                string displayName = processName;
+
+                // Свёрнутый UWP: exe — это ApplicationFrameHost, такое имя на кнопке
+                // выглядело бы мусором. Берём заголовок окна ("Calculator" и т.п.).
+                if (processName.Equals("ApplicationFrameHost", StringComparison.OrdinalIgnoreCase))
+                {
+                    var sbTitle = new StringBuilder(256);
+                    Win32Helper.GetWindowText(hWnd, sbTitle, sbTitle.Capacity);
+                    string title = sbTitle.ToString().Trim();
+                    if (!string.IsNullOrEmpty(title)) displayName = title;
+                }
+
                 var newApp = new DockAppConfig
                 {
-                    Name = processName,
-                    Path = exePath,
+                    Name = displayName,
+                    Path = identityPath,
                     ProcessName = processName,
                     IsDynamic = true,
                     IsRunning = true,
@@ -198,6 +235,50 @@ namespace PlankWin
             }
         }
 
+        // Уборка «мёртвых» окон: у многопроцессных приложений (Claude/Electron, браузеры)
+        // событие HSHELL_WINDOWDESTROYED часто не приходит по отслеживаемому hWnd, и в
+        // WindowHandles остаётся закрытый дескриптор -> зависшие точки, «активная» кнопка
+        // после закрытия/убийства процессов, невозможность открыть простым кликом.
+        // Раз в тик страховочного таймера отсеиваем hWnd, которых уже нет (IsWindow == false),
+        // применяя ту же логику, что и OnShellWindowDestroyed.
+        private void PruneDeadWindows()
+        {
+            foreach (var app in Apps.ToList())
+            {
+                if (app.IsDeleting) continue;
+                if (app.WindowHandles.Count == 0) continue;
+
+                var dead = app.WindowHandles.Where(h => !Win32Helper.IsWindow(h)).ToList();
+                if (dead.Count == 0) continue;
+
+                foreach (var h in dead) app.WindowHandles.Remove(h);
+                app.RunningInstancesCount = app.WindowHandles.Count;
+
+                if (app.RunningInstancesCount == 0)
+                {
+                    app.IsRunning = false;
+                    app.WindowHandle = IntPtr.Zero;
+
+                    if (app.IsDynamic)
+                    {
+                        app.IsDeleting = true;
+                        PositionDock(skipAnimation: false);
+                        var appToRemove = app;
+                        Dispatcher.InvokeAsync(async () =>
+                        {
+                            await AnimateItemContainerAsync(appToRemove, targetSize: 0, animateOpacity: true, durationMs: 350);
+                            Apps.Remove(appToRemove);
+                        });
+                    }
+                }
+                else
+                {
+                    app.WindowHandle = app.WindowHandles.Last();
+                    app.ForceIconUpdate();
+                }
+            }
+        }
+
         // ФИКС №1: Добавили подстраховку при активации окна
         private void OnShellWindowActivated(IntPtr hWnd)
         {
@@ -225,7 +306,11 @@ namespace PlankWin
         private bool IsValidAppWindow(IntPtr hWnd)
         {
             if (!Win32Helper.IsWindowVisible(hWnd)) return false;
-            if (IsWindowCloaked(hWnd)) return false;
+
+            // Свёрнутый UWP тоже cloaked — но он реально запущен и должен быть на доке.
+            // Отличаем его от фоновых/приостановленных UWP-коробок по признаку "свёрнуто":
+            // свёрнутое окно = cloaked И iconic, фоновая коробка = cloaked, но не iconic.
+            if (IsWindowCloaked(hWnd) && !Win32Helper.IsIconic(hWnd)) return false;
 
             int exStyle = Win32Helper.GetWindowLong(hWnd, Win32Helper.GWL_EXSTYLE);
             if ((exStyle & Win32Helper.WS_EX_TOOLWINDOW) != 0) return false;
