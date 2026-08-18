@@ -15,6 +15,7 @@ namespace PlankWin
         private double _edgePushAccumulator = 0;
         private const double EdgePushThreshold = 200;
 
+
         private Window? _glowWindow;
         private Border? _glowBorder;
         private double _currentGlowProgress = 0;
@@ -198,8 +199,14 @@ namespace PlankWin
             }
         }
 
-        public void ProcessRawMouseInput(int deltaX, int deltaY)
+        // Импульс в накопитель за каждое raw-событие движения, приходящее пока курсор
+        // прижат к самому краю экрана. Аналог «сенсор ещё шлёт смещение в упор».
+        private const double AbsPushImpulse = 60;
+
+        public void ProcessRawMouseInput(int rawX, int rawY, ushort usFlags)
         {
+            bool isAbsolute = (usFlags & Win32Helper.MOUSE_MOVE_ABSOLUTE) != 0;
+
             if (!_isHidden || _isTransitioning || _isForceHidden || !Settings.AutoHide) return;
 
             Win32Helper.GetCursorPos(out var pt);
@@ -209,12 +216,44 @@ namespace PlankWin
             int edgeTolerance = 4;
             bool isPushing = false;
 
-            switch (Settings.Position)
+            if (isAbsolute)
             {
-                case DockPosition.Bottom: if (pt.Y >= screen.Bounds.Bottom - edgeTolerance && deltaY > 0) { _edgePushAccumulator += deltaY; isPushing = true; } break;
-                case DockPosition.Top: if (pt.Y <= screen.Bounds.Top + edgeTolerance && deltaY < 0) { _edgePushAccumulator += Math.Abs(deltaY); isPushing = true; } break;
-                case DockPosition.Left: if (pt.X <= screen.Bounds.Left + edgeTolerance && deltaX < 0) { _edgePushAccumulator += Math.Abs(deltaX); isPushing = true; } break;
-                case DockPosition.Right: if (pt.X >= screen.Bounds.Right - edgeTolerance && deltaX > 0) { _edgePushAccumulator += deltaX; isPushing = true; } break;
+                // В абсолютном режиме (VM/RDP/планшет) rawX/rawY — это позиция, нормированная
+                // средой (в VirtualBox край приходит НЕ ровно 0/65535, а со сдвигом), поэтому
+                // на сырые координаты опираться нельзя. Определяем упор в край по ПИКСЕЛЬНОЙ
+                // позиции курсора (GetCursorPos + границы экрана), а сам факт прихода
+                // raw-события трактуем как «мышь продолжает толкать». Пока курсор стоит у
+                // самого края (позиция почти не меняется) и события идут — копим импульс.
+                bool atEdge = false;
+                switch (Settings.Position)
+                {
+                    case DockPosition.Bottom: atEdge = pt.Y >= screen.Bounds.Bottom - edgeTolerance; break;
+                    case DockPosition.Top: atEdge = pt.Y <= screen.Bounds.Top + edgeTolerance; break;
+                    case DockPosition.Left: atEdge = pt.X <= screen.Bounds.Left + edgeTolerance; break;
+                    case DockPosition.Right: atEdge = pt.X >= screen.Bounds.Right - edgeTolerance; break;
+                }
+
+                // «Толкает вдоль оси дока» — курсор почти не движется по перпендикулярной оси
+                // (чтобы прокрутка вдоль правого края НЕ считалась упором): для лево/право
+                // важно, что X упёрт, а Y может гулять — но при прокрутке X не у края, поэтому
+                // atEdge уже отсекает скролл. Импульс даём за каждое событие у края.
+                if (atEdge)
+                {
+                    _edgePushAccumulator += AbsPushImpulse;
+                    isPushing = true;
+                }
+            }
+            else
+            {
+                // Обычная мышь: rawX/rawY — это смещение (дельта).
+                int deltaX = rawX, deltaY = rawY;
+                switch (Settings.Position)
+                {
+                    case DockPosition.Bottom: if (pt.Y >= screen.Bounds.Bottom - edgeTolerance && deltaY > 0) { _edgePushAccumulator += deltaY; isPushing = true; } break;
+                    case DockPosition.Top: if (pt.Y <= screen.Bounds.Top + edgeTolerance && deltaY < 0) { _edgePushAccumulator += Math.Abs(deltaY); isPushing = true; } break;
+                    case DockPosition.Left: if (pt.X <= screen.Bounds.Left + edgeTolerance && deltaX < 0) { _edgePushAccumulator += Math.Abs(deltaX); isPushing = true; } break;
+                    case DockPosition.Right: if (pt.X >= screen.Bounds.Right - edgeTolerance && deltaX > 0) { _edgePushAccumulator += deltaX; isPushing = true; } break;
+                }
             }
 
             if (isPushing)
@@ -227,7 +266,7 @@ namespace PlankWin
                     _edgePushAccumulator = 0;
                     _currentGlowProgress = 0;
                     UpdateGlow(0);
-                    ShowDock();
+                    ShowDock("edge-push");
                 }
             }
         }
@@ -240,13 +279,33 @@ namespace PlankWin
             if ((_activeIconMenu != null && _activeIconMenu.IsOpen) || _isDragging || _isExternalDragActive || _openContextMenusCount > 0 || isSettingsOpen)
             {
                 _visibleTimeMs = 0;
-                if (_isHidden) { ShowDock(); }
+                if (_isHidden) { ShowDock("menu-or-drag"); }
                 return;
             }
 
             Win32Helper.GetCursorPos(out var pt);
             var screen = System.Windows.Forms.Screen.AllScreens.FirstOrDefault(s => s.DeviceName == _profileName) ?? System.Windows.Forms.Screen.PrimaryScreen;
             if (screen == null) return;
+
+            // Показ по клику на панель задач. Опрос (без глобальных хуков): если док скрыт,
+            // курсор над прямоугольником таскбара (Shell_TrayWnd), этот таскбар на ТЕКУЩЕМ
+            // экране (для мультимонитора) и в этот момент нажата левая кнопка — показываем док.
+            // Клик держится дольше тика (100 мс), поэтому не теряется.
+            if (_isHidden && (Win32Helper.GetAsyncKeyState(Win32Helper.VK_LBUTTON) & 0x8000) != 0)
+            {
+                IntPtr tray = Win32Helper.FindWindow("Shell_TrayWnd", null);
+                if (tray != IntPtr.Zero && Win32Helper.GetWindowRect(tray, out var tr))
+                {
+                    bool cursorOnTray = pt.X >= tr.Left && pt.X <= tr.Right && pt.Y >= tr.Top && pt.Y <= tr.Bottom;
+                    bool trayOnThisScreen = tr.Right > screen.Bounds.Left && tr.Left < screen.Bounds.Right
+                                          && tr.Bottom > screen.Bounds.Top && tr.Top < screen.Bounds.Bottom;
+                    if (cursorOnTray && trayOnThisScreen)
+                    {
+                        ShowDock("taskbar-click");
+                        return;
+                    }
+                }
+            }
 
             double dpiX = 1.0, dpiY = 1.0;
             var source = PresentationSource.FromVisual(this);
@@ -298,12 +357,18 @@ namespace PlankWin
 
             if (_isHidden)
             {
-                if (!shouldHide)
+                // РАНЬШЕ здесь скрытая панель ВЫДЁРГИВАЛАСЬ показанной при shouldHide=false.
+                // Это давало самоподхват (панель стала foreground -> «не прятать» -> держится)
+                // и показ на пустом рабочем столе/по клику, хотя там панель должна прятаться,
+                // открывая доступ к ярлыкам. Теперь скрытую панель показывают только ЯВНЫЕ
+                // триггеры (упор в край, клик по таскбару, меню/перетаскивание). Исключение —
+                // режим AlwaysVisible: в нём панель обязана быть видимой всегда.
+                if (Settings.VisibilityMode == DockVisibilityMode.AlwaysVisible)
                 {
                     _edgePushAccumulator = 0;
                     _currentGlowProgress = 0;
                     UpdateGlow(0);
-                    ShowDock();
+                    ShowDock("always-visible");
                 }
                 else if (isMouseNearEdge)
                 {
@@ -321,6 +386,7 @@ namespace PlankWin
                         _currentGlowProgress = 0.4 + (0.6 * Math.Clamp(_edgePushAccumulator / EdgePushThreshold, 0, 1.0));
                         UpdateGlow(_currentGlowProgress);
                     }
+
                 }
                 else
                 {
@@ -373,9 +439,16 @@ namespace PlankWin
             PositionDock();
         }
 
-        private void ShowDock()
+        private void ShowDock(string reason = "?")
         {
             if (!_isHidden || _isTransitioning || _isForceHidden) return;
+
+            // ВРЕМЕННАЯ ДИАГНОСТИКА: кто и в каком контексте показал док.
+            Win32Helper.GetCursorPos(out var dpt);
+            IntPtr fg = Win32Helper.GetForegroundWindow();
+            string fgCls = fg != IntPtr.Zero ? Win32Helper.GetWindowClassName(fg) : "(null)";
+            System.Diagnostics.Debug.WriteLine($"🟢 [SHOW-DIAG] reason={reason} cursor=({dpt.X},{dpt.Y}) fgClass='{fgCls}'");
+
             _isHidden = false;
             _visibleTimeMs = 0;
             PositionDock();
@@ -481,165 +554,6 @@ namespace PlankWin
             return found;
         }
 
-        // ✅ ГЛАВНЫЙ МЕТОД: Проверка связанных окон процесса
-        private bool IsAnyRelatedWindowOverlappingPanel()
-        {
-            try
-            {
-                IntPtr foregroundWindow = Win32Helper.GetForegroundWindow();
-                string windowTitle = "";
-                string className = "";
-
-                // Получаем информацию об активном окне для диагностики
-                var sb = new System.Text.StringBuilder(256);
-                Win32Helper.GetWindowText(foregroundWindow, sb, sb.Capacity);
-                windowTitle = sb.ToString();
-                className = Win32Helper.GetWindowClassName(foregroundWindow);
-
-                //System.Diagnostics.Debug.WriteLine($"🔍 [AUTO-HIDE] Checking foreground window: '{windowTitle}' (class: {className}, handle: {foregroundWindow})");
-
-                // 1. Проверяем основное окно
-                bool foregroundOverlaps = IsWindowOverlappingPanel(foregroundWindow);
-                //System.Diagnostics.Debug.WriteLine($"🔍 [AUTO-HIDE] Foreground window overlaps: {foregroundOverlaps}");
-
-                if (foregroundOverlaps)
-                {
-                    //System.Diagnostics.Debug.WriteLine($"✅ [AUTO-HIDE] Foreground window overlaps panel - returning TRUE");
-                    return true;
-                }
-
-                // 2. УЛУЧШЕННАЯ ЛОГИКА: Более умная проверка связанных окон
-                string foregroundProcessPath = GetProcessExecutablePath(foregroundWindow);
-                //System.Diagnostics.Debug.WriteLine($"🔍 [AUTO-HIDE] Process path: {foregroundProcessPath}");
-
-                if (!string.IsNullOrEmpty(foregroundProcessPath))
-                {
-                    // Проверяем тип процесса для специальной обработки
-                    bool isUwpApp = IsUwpApplication(foregroundProcessPath);
-                    //System.Diagnostics.Debug.WriteLine($"🔍 [AUTO-HIDE] Is UWP app: {isUwpApp}");
-
-                    // Для UWP приложений - более строгий подход
-                    if (isUwpApp)
-                    {
-                        //System.Diagnostics.Debug.WriteLine($"📱 [AUTO-HIDE] UWP app detected - using simplified logic");
-
-                        // У UWP только проверяем foreground окно и его прямого owner
-                        IntPtr uwpOwner = Win32Helper.GetWindow(foregroundWindow, Win32Helper.GW_OWNER);
-                        //System.Diagnostics.Debug.WriteLine($"🔍 [AUTO-HIDE] UWP owner window: {uwpOwner}");
-
-                        if (uwpOwner != IntPtr.Zero && IsWindowOverlappingPanel(uwpOwner))
-                        {
-                            System.Diagnostics.Debug.WriteLine($"✅ [AUTO-HIDE] UWP owner overlaps - returning TRUE");
-                            return true;
-                        }
-
-                        // Для UWP не сканируем все окна процесса - слишком много служебных окон
-                        //System.Diagnostics.Debug.WriteLine($"❌ [AUTO-HIDE] UWP app - no overlap found, returning FALSE");
-                        return false;
-                    }
-
-                    System.Diagnostics.Debug.WriteLine($"🖥️ [AUTO-HIDE] Win32 app detected - using full scan logic");
-
-                    // Для обычных Win32 приложений - полное сканирование связанных окон
-                    var relatedWindows = new List<IntPtr>();
-                    int mainWindowCount = 0;
-
-                    Win32Helper.EnumWindows((hWnd, lParam) =>
-                    {
-                        try
-                        {
-                            if (Win32Helper.IsWindowVisible(hWnd))
-                            {
-                                string windowProcessPath = GetProcessExecutablePath(hWnd);
-                                if (windowProcessPath == foregroundProcessPath)
-                                {
-                                    string winClassName = Win32Helper.GetWindowClassName(hWnd);
-
-                                    // Считаем только значимые окна (не служебные)
-                                    if (!IsSystemOrServiceWindow(winClassName))
-                                    {
-                                        relatedWindows.Add(hWnd);
-
-                                        // Проверяем является ли окно главным
-                                        if (IsMainWindow(hWnd))
-                                        {
-                                            mainWindowCount++;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        catch { }
-                        return true;
-                    }, IntPtr.Zero);
-
-                    //System.Diagnostics.Debug.WriteLine($"🔍 [AUTO-HIDE] Found {relatedWindows.Count} related windows ({mainWindowCount} main windows)");
-
-                    // Проверяем только значимые окна
-                    foreach (var hwnd in relatedWindows)
-                    {
-                        if (IsWindowOverlappingPanel(hwnd))
-                        {
-                            //System.Diagnostics.Debug.WriteLine($"✅ [AUTO-HIDE] Related window {hwnd} overlaps - returning TRUE");
-                            return true;
-                        }
-                    }
-                }
-
-                // 3. ДОПОЛНИТЕЛЬНО: Проверяем owner окно (для popup меню)
-                IntPtr owner = Win32Helper.GetWindow(foregroundWindow, Win32Helper.GW_OWNER);
-                System.Diagnostics.Debug.WriteLine($"🔍 [AUTO-HIDE] General owner check: {owner}");
-
-                if (owner != IntPtr.Zero && IsWindowOverlappingPanel(owner))
-                {
-                    //System.Diagnostics.Debug.WriteLine($"✅ [AUTO-HIDE] Owner window overlaps - returning TRUE");
-                    return true;
-                }
-
-                //System.Diagnostics.Debug.WriteLine($"❌ [AUTO-HIDE] No overlapping windows found - returning FALSE");
-                return false;
-            }
-            catch (Exception ex)
-            {
-                //System.Diagnostics.Debug.WriteLine($"❗ [AUTO-HIDE] ERROR in IsAnyRelatedWindowOverlappingPanel: {ex.Message}");
-                return false;
-            }
-        }
-
-        // ✅ ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
-        private bool IsUwpApplication(string processPath)
-        {
-            return processPath.Contains("WindowsApps", StringComparison.OrdinalIgnoreCase) ||
-                   processPath.Contains("Calculator", StringComparison.OrdinalIgnoreCase) ||
-                   processPath.Contains("SystemSettings", StringComparison.OrdinalIgnoreCase) ||
-                   processPath.Contains("ClockAndCalendar", StringComparison.OrdinalIgnoreCase) ||
-                   processPath.Contains("Microsoft.", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private bool IsSystemOrServiceWindow(string className)
-        {
-            return className == "ApplicationManager_DesktopShellWindow" ||
-                   className == "WorkerW" ||
-                   className == "Progman" ||
-                   className == "DV2ControlHost" ||
-                   className == "ForegroundStaging" ||
-                   className == "ApplicationManager_ImmersiveShellWindow" ||
-                   className.StartsWith("Windows.UI.Core") ||
-                   className.Contains("InputMethod") ||
-                   className.Contains("IME");
-        }
-
-        private bool IsMainWindow(IntPtr hWnd)
-        {
-            // Простая эвристика для определения главного окна
-            Win32Helper.GetWindowRect(hWnd, out var rect);
-            int width = rect.Right - rect.Left;
-            int height = rect.Bottom - rect.Top;
-
-            // Главные окна обычно больше чем popup/service окна
-            return width > 100 && height > 100;
-        }
-
         // ✅ ВСПОМОГАТЕЛЬНЫЙ МЕТОД: Проверка перекрытия одного окна с панелью
         private bool IsWindowOverlappingPanel(IntPtr hWnd)
         {
@@ -713,25 +627,5 @@ namespace PlankWin
             }
         }
 
-        // ✅ БЫСТРЫЙ МЕТОД: Простое получение пути процесса для auto-hide (без UWP обработки)
-        private string GetProcessPathForAutoHide(IntPtr hWnd)
-        {
-            try
-            {
-                if (hWnd == IntPtr.Zero)
-                    return string.Empty;
-
-                Win32Helper.GetWindowThreadProcessId(hWnd, out uint processId);
-                if (processId == 0)
-                    return string.Empty;
-
-                using var process = System.Diagnostics.Process.GetProcessById((int)processId);
-                return process.MainModule?.FileName ?? string.Empty;
-            }
-            catch
-            {
-                return string.Empty;
-            }
-        }
     }
 }

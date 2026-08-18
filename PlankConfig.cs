@@ -21,7 +21,12 @@ namespace PlankWin
         // Список процессов, которые не должны появляться в доке
         public System.Collections.ObjectModel.ObservableCollection<string> IgnoreProcessNames { get; set; } = new();
 
-        public bool RunAtStartup { get; set; } = false;
+        private bool _runAtStartup = false;
+        public bool RunAtStartup
+        {
+            get => _runAtStartup;
+            set { if (_runAtStartup != value) { _runAtStartup = value; OnPropertyChanged(); } }
+        }
 
         // --- БАЗОВОЕ ПОВЕДЕНИЕ ---
         private DockPosition _position = DockPosition.Bottom;

@@ -17,6 +17,11 @@ namespace PlankWin
         [DllImport("user32.dll")]
         public static extern bool SetForegroundWindow(IntPtr hWnd);
 
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+        public const int VK_LBUTTON = 0x01;
+
         [DllImport("user32.dll")]
         public static extern IntPtr GetForegroundWindow();
 
@@ -493,6 +498,7 @@ namespace PlankWin
         // ==========================================
         public const int WM_INPUT = 0x00FF;
         public const uint RIDEV_INPUTSINK = 0x00000100;
+        public const ushort MOUSE_MOVE_ABSOLUTE = 0x01;
         public const uint RID_INPUT = 0x10000003;
         public const int RIM_TYPEMOUSE = 0;
 

@@ -148,7 +148,15 @@ namespace PlankWin
             // иконка достаётся (конвертер это умеет), запуск идёт через активацию по AUMID,
             // и запись совпадает с закреплением того же UWP через drag-in (без дубля кнопок).
             string identityPath = exePath;
-            if (Win32Helper.GetWindowClassName(hWnd) == "ApplicationFrameWindow")
+
+            // Сводим к shell:AppsFolder\<AUMID> для пакетных приложений. Два случая:
+            //  1) классический UWP — окно-рамка ApplicationFrameWindow (Калькулятор и т.п.);
+            //  2) любое приложение, чей exe лежит в WindowsApps (Claude/Electron, Store-приложения),
+            //     у которого окно НЕ ApplicationFrameWindow — сырой exe-путь версионный и протухает
+            //     после обновления приложения, давая «невидимую кнопку». AUMID стабилен.
+            bool isFrame = Win32Helper.GetWindowClassName(hWnd) == "ApplicationFrameWindow";
+            bool isPackaged = exePath.IndexOf("\\WindowsApps\\", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (isFrame || isPackaged)
             {
                 string winAumid = Win32Helper.GetAumidFromWindow(hWnd);
                 if (!string.IsNullOrEmpty(winAumid))
@@ -156,6 +164,31 @@ namespace PlankWin
             }
 
             var targetApp = Apps.FirstOrDefault(a => a.Path.Equals(identityPath, StringComparison.OrdinalIgnoreCase));
+
+            // САМОИСЦЕЛЕНИЕ протухших записей. Если для пакетного приложения точного совпадения
+            // нет, но в конфиге есть закреплённая запись со СТАРЫМ сырым exe-путём в WindowsApps
+            // того же пакета (например, осталась от прошлой версии Claude или от другой сборки) —
+            // переписываем её путь на стабильный shell:AppsFolder\<AUMID> и используем её, вместо
+            // создания второй кнопки. Совпадение по «семейству пакета» (имя_хешИздателя), которое
+            // не меняется при обновлении приложения.
+            if (targetApp == null && identityPath.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase))
+            {
+                string family = PackageFamilyFromAumidPath(identityPath);
+                if (!string.IsNullOrEmpty(family))
+                {
+                    var stale = Apps.FirstOrDefault(a =>
+                        a != null && !a.IsPlaceholder &&
+                        a.Path != null &&
+                        a.Path.IndexOf("\\WindowsApps\\", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                        string.Equals(PackageFamilyFromExePath(a.Path), family, StringComparison.OrdinalIgnoreCase));
+                    if (stale != null)
+                    {
+                        stale.Path = identityPath;   // лечим протухший путь
+                        targetApp = stale;
+                        SaveAppsConfig();
+                    }
+                }
+            }
 
             // ЗАЩИТА ОТ ЧЕХАРДЫ: приложение в процессе удаления (идёт анимация исчезновения).
             // Страховочный таймер не должен его трогать, иначе оживёт зомби-иконка.
@@ -241,6 +274,38 @@ namespace PlankWin
         // после закрытия/убийства процессов, невозможность открыть простым кликом.
         // Раз в тик страховочного таймера отсеиваем hWnd, которых уже нет (IsWindow == false),
         // применяя ту же логику, что и OnShellWindowDestroyed.
+        // Извлекает «семейство пакета» (Name_PublisherHash) из AUMID-пути вида
+        // "shell:AppsFolder\Claude_pzs8sxrjxfjjc!App" -> "Claude_pzs8sxrjxfjjc".
+        private static string PackageFamilyFromAumidPath(string aumidPath)
+        {
+            if (string.IsNullOrEmpty(aumidPath)) return string.Empty;
+            const string prefix = "shell:AppsFolder\\";
+            string s = aumidPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? aumidPath.Substring(prefix.Length) : aumidPath;
+            int bang = s.IndexOf('!');
+            if (bang >= 0) s = s.Substring(0, bang); // до '!' — PackageFamilyName
+            return s.Trim();
+        }
+
+        // Извлекает «семейство пакета» из сырого exe-пути в WindowsApps вида
+        // "...\WindowsApps\Claude_1.24012.11.0_x64__pzs8sxrjxfjjc\app\claude.exe"
+        // Папка пакета: "Name_Version_Arch__PublisherHash" -> "Name_PublisherHash".
+        private static string PackageFamilyFromExePath(string exePath)
+        {
+            if (string.IsNullOrEmpty(exePath)) return string.Empty;
+            const string marker = "\\WindowsApps\\";
+            int i = exePath.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (i < 0) return string.Empty;
+            string rest = exePath.Substring(i + marker.Length);
+            int slash = rest.IndexOf('\\');
+            string folder = slash >= 0 ? rest.Substring(0, slash) : rest; // Name_Version_Arch__PublisherHash
+            int us = folder.IndexOf('_');
+            int dhh = folder.IndexOf("__", StringComparison.Ordinal);
+            if (us < 0 || dhh < 0 || dhh + 2 >= folder.Length) return string.Empty;
+            string name = folder.Substring(0, us);
+            string pubHash = folder.Substring(dhh + 2);
+            return name + "_" + pubHash;
+        }
+
         private void PruneDeadWindows()
         {
             foreach (var app in Apps.ToList())

@@ -8,6 +8,7 @@
         ShowInTaskbar="False" Topmost="True" 
         Loaded="Window_Loaded"
         Deactivated="Window_Deactivated"
+        AllowDrop="True" DragOver="OnWindowDragOver"
         PreviewMouseRightButtonUp="Window_PreviewMouseRightButtonUp"
         PreviewMouseDown="Window_PreviewMouseDown">
 
@@ -563,12 +564,12 @@
                                     </Button.Margin>
                                     <Image Source="{Binding ActiveIconTrigger, Converter={StaticResource AppIconConverter}}" RenderOptions.BitmapScalingMode="HighQuality" Margin="2" ClipToBounds="False"/>
                                 </Button>
-                                     <DataTemplate.Triggers>
-                                        <DataTrigger Binding="{Binding IsPlaceholder}" Value="True">
-                                            <Setter TargetName="AppButton" Property="Opacity" Value="0.3"/>
-                                            <Setter TargetName="AppButton" Property="IsHitTestVisible" Value="False"/>
-                                        </DataTrigger>
-                                    </DataTemplate.Triggers>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding IsPlaceholder}" Value="True">
+                                        <Setter TargetName="AppButton" Property="Opacity" Value="0.3"/>
+                                        <Setter TargetName="AppButton" Property="IsHitTestVisible" Value="False"/>
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </local:DockItemsControl>
