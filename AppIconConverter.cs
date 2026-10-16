@@ -227,7 +227,7 @@ namespace PlankWin
             return GetAumidFromProcess(hwnd);
         }
 
-        private static BitmapSource? ExtractIconFromPath(string path)
+        internal static BitmapSource? ExtractIconFromPath(string path)
         {
             if (string.IsNullOrEmpty(path)) return null;
 
@@ -289,6 +289,15 @@ namespace PlankWin
                 // Ключ кэша для Win32 (путь). Для UWP уточним ниже, когда добудем AUMID.
                 string cacheKey = app.Path ?? string.Empty;
 
+                // PWA (Chrome/Edge): иконка из Web Applications по app-id.
+                if (cacheKey.StartsWith("pwa:", StringComparison.OrdinalIgnoreCase))
+                {
+                    var pwaCached = TryGetFromCache(cacheKey);
+                    if (pwaCached != null) return pwaCached;
+                    var pwaImg = LoadPwaIcon(cacheKey);
+                    if (pwaImg != null) { SaveToCache(cacheKey, pwaImg); return pwaImg; }
+                }
+
                 try
                 {
                     IntPtr activeHwnd = app.WindowHandle;
@@ -313,7 +322,7 @@ namespace PlankWin
                         }
                     }
 
-                    string targetPath = app.Path;
+                    string targetPath = app.Path ?? string.Empty;
 
                     if (app.IsRunning && app.WindowHandles != null && app.WindowHandles.Count > 0)
                     {
@@ -411,6 +420,60 @@ namespace PlankWin
                 catch { }
             }
             return null!;
+        }
+
+        // Иконка PWA из папки Web Applications браузера (Chrome/Edge).
+        private static BitmapSource? LoadPwaIcon(string pwaPath)
+        {
+            try
+            {
+                string body = pwaPath.Substring(4); // убрать "pwa:"
+                int at = body.LastIndexOf('@');
+                string profile = at >= 0 ? body.Substring(at + 1) : "Default";
+                string rest = at >= 0 ? body.Substring(0, at) : body;
+                int colon = rest.IndexOf(':');
+                string browser = colon >= 0 ? rest.Substring(0, colon) : "chrome";
+                string appId = colon >= 0 ? rest.Substring(colon + 1) : rest;
+
+                string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                string baseDir = browser.Equals("edge", StringComparison.OrdinalIgnoreCase)
+                    ? System.IO.Path.Combine(local, "Microsoft", "Edge", "User Data")
+                    : System.IO.Path.Combine(local, "Google", "Chrome", "User Data");
+                string crxDir = System.IO.Path.Combine(baseDir, profile, "Web Applications", "_crx_" + appId);
+                if (!System.IO.Directory.Exists(crxDir)) return null;
+
+                // Иконка: сначала .ico (Chrome PWA кладёт "<Имя>.ico"), затем png (макс. размер).
+                string? best = null;
+                var icoFiles = System.IO.Directory.GetFiles(crxDir, "*.ico", System.IO.SearchOption.AllDirectories);
+                if (icoFiles.Length > 0)
+                {
+                    best = icoFiles[0];
+                    long maxLen = -1;
+                    foreach (var f in icoFiles) { long ln = new System.IO.FileInfo(f).Length; if (ln > maxLen) { maxLen = ln; best = f; } }
+                }
+                else
+                {
+                    var pngFiles = System.IO.Directory.GetFiles(crxDir, "*.png", System.IO.SearchOption.AllDirectories);
+                    int bestSize = -1;
+                    foreach (var f in pngFiles)
+                    {
+                        string nm = System.IO.Path.GetFileNameWithoutExtension(f);
+                        int sz = int.TryParse(nm, out int parsed) ? parsed : 0;
+                        if (sz > bestSize) { bestSize = sz; best = f; }
+                    }
+                }
+                if (best == null) return null;
+
+                var bmp = new BitmapImage();
+                bmp.BeginInit();
+                bmp.CacheOption = BitmapCacheOption.OnLoad;
+                bmp.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
+                bmp.UriSource = new Uri(best, UriKind.Absolute);
+                bmp.EndInit();
+                bmp.Freeze();
+                return bmp;
+            }
+            catch { return null; }
         }
 
         public object ConvertBack(object value, Type targetTypes, object parameter, System.Globalization.CultureInfo culture) => throw new NotImplementedException();

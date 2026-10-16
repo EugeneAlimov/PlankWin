@@ -106,6 +106,43 @@ namespace PlankWin
         [DllImport("user32.dll", SetLastError = true)]
         public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
+        [DllImport("user32.dll")]
+        public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+        [DllImport("kernel32.dll")]
+        public static extern uint GetCurrentThreadId();
+
+        [DllImport("user32.dll")]
+        public static extern bool BringWindowToTop(IntPtr hWnd);
+
+        // --- Снимок процессов (для поиска родительского процесса) ---
+        public const uint TH32CS_SNAPPROCESS = 0x00000002;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+        public struct PROCESSENTRY32
+        {
+            public uint dwSize;
+            public uint cntUsage;
+            public uint th32ProcessID;
+            public IntPtr th32DefaultHeapID;
+            public uint th32ModuleID;
+            public uint cntThreads;
+            public uint th32ParentProcessID;
+            public int pcPriClassBase;
+            public uint dwFlags;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+            public string szExeFile;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
+        public static extern bool Process32First(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
+        public static extern bool Process32Next(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern IntPtr OpenProcess(uint processAccess, bool bInheritHandle, uint processId);
 
@@ -155,11 +192,76 @@ namespace PlankWin
         [DllImport("dwmapi.dll")]
         public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
+        [DllImport("dwmapi.dll")]
+        public static extern int DwmGetColorizationColor(out uint colorization, out bool opaqueBlend);
+
+        // Чистый акцентный цвет Windows (DWM AccentColor, ABGR) как hex "#RRGGBB" — для подкраски тени.
+        public static string GetAccentColorRaw()
+        {
+            try
+            {
+                using var dwm = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\DWM");
+                if (dwm?.GetValue("AccentColor") is int abgr)
+                {
+                    int r = abgr & 0xFF, g = (abgr >> 8) & 0xFF, b = (abgr >> 16) & 0xFF;
+                    return $"#{r:X2}{g:X2}{b:X2}";
+                }
+            }
+            catch { }
+            return "#0078D7";
+        }
+
+        // Цвет панели задач Windows: если включён «цвет на панели задач» — акцент, иначе — цвет по теме (тёмная/светлая).
+        public static string GetWindowsAccentColorHex()
+        {
+            try
+            {
+                using var pers = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                    @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+                bool colorOnTaskbar = pers?.GetValue("ColorPrevalence") is int cp && cp != 0;
+                bool lightTheme = pers?.GetValue("SystemUsesLightTheme") is int lt && lt != 0;
+
+                if (colorOnTaskbar)
+                {
+                    // Таскбар покрашен акцентом — берём акцент из DWM (ABGR).
+                    using var dwm = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\DWM");
+                    if (dwm?.GetValue("AccentColor") is int abgr)
+                    {
+                        int r = abgr & 0xFF, g = (abgr >> 8) & 0xFF, b = (abgr >> 16) & 0xFF;
+                        return $"#{r:X2}{g:X2}{b:X2}";
+                    }
+                }
+                // Иначе таскбар красится темой.
+                return lightTheme ? "#F3F3F3" : "#1F1F1F";
+            }
+            catch { }
+            return "#1F1F1F"; // запасной — тёмный таскбар
+        }
+
         [DllImport("dwmapi.dll", PreserveSig = true)]
         public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out int pvAttribute, int cbAttribute);
 
         [DllImport("dwmapi.dll", PreserveSig = true)]
         public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
+
+        // --- DWM Thumbnail (живые превью окон) ---
+        [DllImport("dwmapi.dll", PreserveSig = true)]
+        public static extern int DwmRegisterThumbnail(IntPtr dest, IntPtr src, out IntPtr thumbId);
+
+        [DllImport("dwmapi.dll", PreserveSig = true)]
+        public static extern int DwmUnregisterThumbnail(IntPtr thumbId);
+
+        [DllImport("dwmapi.dll", PreserveSig = true)]
+        public static extern int DwmUpdateThumbnailProperties(IntPtr thumbId, ref DWM_THUMBNAIL_PROPERTIES props);
+
+        [DllImport("dwmapi.dll", PreserveSig = true)]
+        public static extern int DwmQueryThumbnailSourceSize(IntPtr thumbId, out PSIZE size);
+
+        public const int DWM_TNP_RECTDESTINATION = 0x00000001;
+        public const int DWM_TNP_RECTSOURCE = 0x00000002;
+        public const int DWM_TNP_OPACITY = 0x00000004;
+        public const int DWM_TNP_VISIBLE = 0x00000008;
+        public const int DWM_TNP_SOURCECLIENTAREAONLY = 0x00000010;
 
         // ==========================================
         // GDI & ИКОНКИ
@@ -173,6 +275,30 @@ namespace PlankWin
         [DllImport("gdi32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool DeleteObject(IntPtr hObject);
+
+        // --- GDI: захват снимка окна (для превью) ---
+        public const uint PW_RENDERFULLCONTENT = 0x00000002;
+
+        [DllImport("user32.dll")]
+        public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetWindowDC(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        public static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+        [DllImport("gdi32.dll")]
+        public static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+
+        [DllImport("gdi32.dll")]
+        public static extern IntPtr CreateCompatibleBitmap(IntPtr hdc, int nWidth, int nHeight);
+
+        [DllImport("gdi32.dll")]
+        public static extern IntPtr SelectObject(IntPtr hdc, IntPtr hgdiobj);
+
+        [DllImport("gdi32.dll")]
+        public static extern bool DeleteDC(IntPtr hdc);
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -237,7 +363,7 @@ namespace PlankWin
         {
             if (string.IsNullOrEmpty(lnkPath)) return string.Empty;
             IntPtr pidl = IntPtr.Zero;
-            object linkObj = null;
+            object? linkObj = null;
             try
             {
                 // Загружаем .lnk и берём его ЦЕЛЕВОЙ PIDL. Для UWP-ярлыка цель указывает
@@ -389,7 +515,11 @@ namespace PlankWin
         // СТРУКТУРЫ И КОНСТАНТЫ
         // ==========================================
         public const int SW_RESTORE = 9;
+        public const int SW_MAXIMIZE = 3;
         public const int SW_MINIMIZE = 6;
+
+        [DllImport("user32.dll")]
+        public static extern bool IsZoomed(IntPtr hWnd);
         public const uint WM_CLOSE = 0x0010;
         public const int GWL_EXSTYLE = -20;
         public const int GWL_STYLE = -16;
@@ -425,6 +555,8 @@ namespace PlankWin
 
         [StructLayout(LayoutKind.Sequential)]
         public struct Win32Point { public int X; public int Y; }
+        [StructLayout(LayoutKind.Sequential)]
+        public struct MSLLHOOKSTRUCT { public Win32Point pt; public uint mouseData; public uint flags; public uint time; public IntPtr dwExtraInfo; }
 
         [StructLayout(LayoutKind.Sequential)]
         public struct MINMAXINFO { public Win32Point ptReserved; public Win32Point ptMaxSize; public Win32Point ptMaxPosition; public Win32Point ptMinTrackSize; public Win32Point ptMaxTrackSize; }
@@ -434,6 +566,20 @@ namespace PlankWin
 
         [StructLayout(LayoutKind.Sequential)]
         public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct PSIZE { public int x; public int y; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct DWM_THUMBNAIL_PROPERTIES
+        {
+            public int dwFlags;
+            public RECT rcDestination;
+            public RECT rcSource;
+            public byte opacity;
+            [MarshalAs(UnmanagedType.Bool)] public bool fVisible;
+            [MarshalAs(UnmanagedType.Bool)] public bool fSourceClientAreaOnly;
+        }
 
         [StructLayout(LayoutKind.Sequential)]
         public struct APPBARDATA { public int cbSize; public IntPtr hWnd; public int uCallbackMessage; public int uEdge; public RECT rc; public IntPtr lParam; }
@@ -461,6 +607,38 @@ namespace PlankWin
 
         [ComImport, Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
         public interface IPropertyStore { [PreserveSig] int GetCount(out uint cProps); [PreserveSig] int GetAt(uint iProp, out PROPERTYKEY pkey); [PreserveSig] int GetValue(ref PROPERTYKEY key, out PROPVARIANT pv); [PreserveSig] int SetValue(ref PROPERTYKEY key, ref PROPVARIANT propvar); [PreserveSig] int Commit(); }
+
+        [ComImport, Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        public interface IShellItem
+        {
+            [PreserveSig] int BindToHandler(IntPtr pbc, [In, MarshalAs(UnmanagedType.LPStruct)] Guid bhid, [In, MarshalAs(UnmanagedType.LPStruct)] Guid riid, [MarshalAs(UnmanagedType.IUnknown)] out object ppv);
+            [PreserveSig] int GetParent(out IShellItem ppsi);
+            [PreserveSig] int GetDisplayName(uint sigdnName, out IntPtr ppszName);
+            [PreserveSig] int GetAttributes(uint sfgaoMask, out uint psfgaoAttribs);
+            [PreserveSig] int Compare(IShellItem psi, uint hint, out int piOrder);
+        }
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = true, EntryPoint = "SHCreateItemFromParsingName")]
+        private static extern int SHCreateShellItem([In, MarshalAs(UnmanagedType.LPWStr)] string pszPath, IntPtr pbc, [In, MarshalAs(UnmanagedType.LPStruct)] Guid riid, out IShellItem ppv);
+
+        // Windows 11 (сборка 22000+): системные скругления. На Win10 элементы «под систему» — с прямыми углами.
+        public static bool IsWin11 { get; } = Environment.OSVersion.Version.Build >= 22000;
+
+        // Нативный shell-IDataObject для элемента (напр. shell:AppsFolder\AUMID).
+        // Проводник при дропе такого объекта сам создаёт нормальный ярлык — как при перетаскивании из Пуска.
+        public static System.Runtime.InteropServices.ComTypes.IDataObject? GetShellDataObject(string parsingName)
+        {
+            try
+            {
+                Guid iidItem = typeof(IShellItem).GUID;
+                if (SHCreateShellItem(parsingName, IntPtr.Zero, iidItem, out IShellItem item) != 0 || item == null) return null;
+                Guid BHID_DataObject = new Guid("b8c0bd9f-ed24-455c-83e6-d5390c4fe8c4");
+                Guid IID_IDataObject = new Guid("0000010e-0000-0000-C000-000000000046");
+                if (item.BindToHandler(IntPtr.Zero, BHID_DataObject, IID_IDataObject, out object obj) != 0) return null;
+                return obj as System.Runtime.InteropServices.ComTypes.IDataObject;
+            }
+            catch { return null; }
+        }
 
         [ComImport, Guid("00021401-0000-0000-C000-000000000046")]
         public class ShellLink { }

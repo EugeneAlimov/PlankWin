@@ -1,4 +1,4 @@
-using System;
+п»їusing System;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -9,7 +9,7 @@ namespace PlankWin
 {
     public partial class MainWindow
     {
-        // --- КОНВЕРТЕР-ГЛУШИТЕЛЬ ДЛЯ INTPTR ---
+        // --- РљРћРќР’Р•Р РўР•Р -Р“Р›РЈРЁРРўР•Р›Р¬ Р”Р›РЇ INTPTR ---
         private class IntPtrConverter : JsonConverter<IntPtr>
         {
             public override IntPtr Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => IntPtr.Zero;
@@ -28,23 +28,29 @@ namespace PlankWin
             return options;
         }
 
-        // МАГИЯ: Генерируем индивидуальное имя файла для каждой панели!
+        // РњРђР“РРЇ: Р“РµРЅРµСЂРёСЂСѓРµРј РёРЅРґРёРІРёРґСѓР°Р»СЊРЅРѕРµ РёРјСЏ С„Р°Р№Р»Р° РґР»СЏ РєР°Р¶РґРѕР№ РїР°РЅРµР»Рё!
         private string GetAppsConfigPath()
         {
             string safeProfileName = string.Join("_", _profileName.Split(Path.GetInvalidFileNameChars()));
-            return Path.Combine(AppContext.BaseDirectory, $"apps_{safeProfileName}.json");
+            return Path.Combine(PlankConfig.GetDataDir(), $"apps_{safeProfileName}.json");
         }
 
         private void LoadAppsConfig()
         {
             try
             {
-                _isLoadingConfig = true; // Блокируем анимации
+                _isLoadingConfig = true; // Р‘Р»РѕРєРёСЂСѓРµРј Р°РЅРёРјР°С†РёРё
                 string configPath = GetAppsConfigPath();
                 string oldConfigPath = Path.Combine(AppContext.BaseDirectory, "apps.json");
 
-                // Если индивидуального конфига еще нет, но есть старый общий — копируем его
-                if (!File.Exists(configPath) && File.Exists(oldConfigPath))
+                // Р•СЃР»Рё РёРЅРґРёРІРёРґСѓР°Р»СЊРЅРѕРіРѕ РєРѕРЅС„РёРіР° РµС‰Рµ РЅРµС‚, РЅРѕ РµСЃС‚СЊ СЃС‚Р°СЂС‹Р№ РѕР±С‰РёР№ вЂ” РєРѕРїРёСЂСѓРµРј РµРіРѕ
+                string safeName = string.Join("_", _profileName.Split(Path.GetInvalidFileNameChars()));
+                string legacyProfilePath = Path.Combine(AppContext.BaseDirectory, $"apps_{safeName}.json");
+                if (!File.Exists(configPath) && File.Exists(legacyProfilePath))
+                {
+                    File.Copy(legacyProfilePath, configPath); // РјРёРіСЂР°С†РёСЏ РёР· СЃС‚Р°СЂРѕРіРѕ РјРµСЃС‚Р° (СЂСЏРґРѕРј СЃ exe)
+                }
+                else if (!File.Exists(configPath) && File.Exists(oldConfigPath))
                 {
                     File.Copy(oldConfigPath, configPath);
                 }
@@ -63,20 +69,22 @@ namespace PlankWin
                     if (string.IsNullOrWhiteSpace(app.Name) || string.IsNullOrWhiteSpace(app.Path))
                         continue;
 
-                    app.IsDynamic = false; // Если загружено из файла — значит закреплено
+                    app.IsDynamic = false; // Р•СЃР»Рё Р·Р°РіСЂСѓР¶РµРЅРѕ РёР· С„Р°Р№Р»Р° вЂ” Р·РЅР°С‡РёС‚ Р·Р°РєСЂРµРїР»РµРЅРѕ
                     app.IsRunning = false;
                     app.WindowHandle = IntPtr.Zero;
 
                     Apps.Add(app);
                 }
+
+                ApplyFavoritesButton();
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка чтения конфигурации приложений:\n{ex.Message}", "PlankWin", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"{Loc.T("err_readApps")}\n{ex.Message}", "PlankWin", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
-                _isLoadingConfig = false; //Разрешаем анимации
+                _isLoadingConfig = false; //Р Р°Р·СЂРµС€Р°РµРј Р°РЅРёРјР°С†РёРё
             }
         }
 
@@ -86,15 +94,15 @@ namespace PlankWin
             {
                 string configPath = GetAppsConfigPath();
 
-                // Сохраняем ТОЛЬКО закрепленные (не динамические) иконки
-                var pinnedApps = Apps.Where(a => !a.IsDynamic && !a.IsPlaceholder).ToArray();
+                // РЎРѕС…СЂР°РЅСЏРµРј РўРћР›Р¬РљРћ Р·Р°РєСЂРµРїР»РµРЅРЅС‹Рµ (РЅРµ РґРёРЅР°РјРёС‡РµСЃРєРёРµ) РёРєРѕРЅРєРё
+                var pinnedApps = Apps.Where(a => !a.IsDynamic && !a.IsPlaceholder && !a.IsFavorites).ToArray();
                 var json = JsonSerializer.Serialize(pinnedApps, GetJsonOptions());
 
                 File.WriteAllText(configPath, json);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка сохранения apps:\n{ex.Message}", "PlankWin", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"{Loc.T("err_saveApps")}\n{ex.Message}", "PlankWin", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

@@ -17,7 +17,25 @@ namespace PlankWin
 
         protected override void OnStartup(StartupEventArgs e)
         {
+            // Перезапуск после импорта: дожидаемся выхода прежнего экземпляра (трей, AppBar, файлы).
+            int wi = Array.IndexOf(e.Args, "--wait-pid");
+            if (wi >= 0 && wi + 1 < e.Args.Length && int.TryParse(e.Args[wi + 1], out int oldPid))
+            {
+                try { System.Diagnostics.Process.GetProcessById(oldPid).WaitForExit(8000); } catch { }
+            }
+            PlankWin.StartMenuAumids.Warmup(); // фоном: карта exe → AUMID для меню «Недавнее»
+            // Win10: прямые углы у элементов «под систему» (меню, списки, вкладки, превью).
+            if (!PlankWin.Win32Helper.IsWin11)
+            {
+                Resources["SysRadiusL"] = new System.Windows.CornerRadius(0);
+                Resources["SysRadiusM"] = new System.Windows.CornerRadius(0);
+                Resources["SysRadiusS"] = new System.Windows.CornerRadius(0);
+            }
+
             base.OnStartup(e);
+
+            // Язык интерфейса — до создания окон (XAML берёт строки через DynamicResource).
+            Loc.Apply(GlobalConfig.Language);
 
             // Подписываемся на системное событие подключения/отключения мониторов
             SystemEvents.DisplaySettingsChanged += SystemEvents_DisplaySettingsChanged;
@@ -32,10 +50,33 @@ namespace PlankWin
             SyncMonitors();
         }
 
-        private void SyncMonitors()
+        public MainWindow? GetDock(string deviceName) => _docks.TryGetValue(deviceName, out var d) ? d : null;
+
+        // Включить/выключить панель на мониторе (из трея). Последнюю включённую выключить нельзя.
+        public void SetMonitorEnabled(string deviceName, bool enabled)
+        {
+            if (!enabled)
+            {
+                int enabledCount = System.Windows.Forms.Screen.AllScreens.Count(s => GlobalConfig.IsMonitorEnabled(s.DeviceName));
+                if (enabledCount <= 1) return;
+            }
+            GlobalConfig.SetMonitorEnabled(deviceName, enabled);
+            SyncMonitors();
+        }
+
+        public void SyncMonitors()
         {
             var currentScreens = System.Windows.Forms.Screen.AllScreens;
-            var activeDeviceNames = currentScreens.Select(s => s.DeviceName).ToList();
+            // Мониторы, на которых панель выключена пользователем, пропускаем.
+            // Если выключены все подключённые — включаем основной (без панели остаться нельзя).
+            var wanted = currentScreens.Where(s => GlobalConfig.IsMonitorEnabled(s.DeviceName)).ToList();
+            if (wanted.Count == 0)
+            {
+                var primary = currentScreens.FirstOrDefault(s => s.Primary) ?? currentScreens.First();
+                GlobalConfig.SetMonitorEnabled(primary.DeviceName, true);
+                wanted.Add(primary);
+            }
+            var activeDeviceNames = wanted.Select(s => s.DeviceName).ToList();
 
             // 1. Убиваем панели на отключенных мониторах
             var disconnectedMonitors = _docks.Keys.Except(activeDeviceNames).ToList();
@@ -46,7 +87,7 @@ namespace PlankWin
             }
 
             // 2. Создаем панели для новых (или всех при старте) мониторов
-            foreach (var screen in currentScreens)
+            foreach (var screen in wanted)
             {
                 if (!_docks.ContainsKey(screen.DeviceName))
                 {

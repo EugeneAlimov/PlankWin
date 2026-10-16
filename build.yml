@@ -1,0 +1,62 @@
+# Автосборка PlankWin.
+#  - push в master / PR / ручной запуск -> сборка, готовый exe в артефактах прогона (Actions -> прогон -> Artifacts);
+#  - push тега vX.Y.Z (git tag v1.0.0 && git push --tags) -> плюс GitHub Release с exe.
+name: Build
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # нужно только для создания релиза по тегу
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # Версия: из тега (v1.2.3 -> 1.2.3), иначе 0.0.<номер прогона>.
+      - name: Version
+        id: ver
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') { $v = $env:GITHUB_REF_NAME.TrimStart('v') }
+          else { $v = "0.0.$env:GITHUB_RUN_NUMBER" }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      # Те же параметры, что в .csproj: self-contained single-file win-x64. Без pdb.
+      - name: Publish
+        run: >
+          dotnet publish PlankWin.csproj -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:DebugType=none
+          -p:Version=${{ steps.ver.outputs.version }}
+          -o publish
+
+      - name: Rename exe
+        shell: pwsh
+        run: Copy-Item publish/PlankWin.exe "PlankWin-${{ steps.ver.outputs.version }}-win-x64.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PlankWin-${{ steps.ver.outputs.version }}-win-x64
+          path: PlankWin-${{ steps.ver.outputs.version }}-win-x64.exe
+          retention-days: 30
+
+      - name: GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: PlankWin-${{ steps.ver.outputs.version }}-win-x64.exe
+          generate_release_notes: true

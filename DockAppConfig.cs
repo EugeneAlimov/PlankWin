@@ -14,6 +14,23 @@ namespace PlankWin
             set { if (_isActive == value) return; _isActive = value; OnPropertyChanged(); }
         }
 
+        // Анимация появления/исчезновения (свой аниматор). Default 1 = полностью видимо/раскрыто.
+        private double _appearScale = 1.0;
+        [System.Text.Json.Serialization.JsonIgnore]
+        public double AppearScale
+        {
+            get => _appearScale;
+            set { if (_appearScale == value) return; _appearScale = value; OnPropertyChanged(); }
+        }
+
+        private double _appearOpacity = 1.0;
+        [System.Text.Json.Serialization.JsonIgnore]
+        public double AppearOpacity
+        {
+            get => _appearOpacity;
+            set { if (_appearOpacity == value) return; _appearOpacity = value; OnPropertyChanged(); }
+        }
+
         private int _activeWindowIndex = -1;
         [JsonIgnore]
         public int ActiveWindowIndex
@@ -25,6 +42,28 @@ namespace PlankWin
         public string Name { get; set; } = string.Empty;
         public string Path { get; set; } = string.Empty;
         public string? Arguments { get; set; }
+
+        // Ярлыки лаунчеров (.url Steam/Epic): чем запускать и где лежит игра (для склейки с процессом).
+        public string? LaunchUri { get; set; }
+
+        // Закреплённые пункты меню «Недавнее» (полные пути).
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public System.Collections.Generic.List<string>? RecentPins { get; set; }
+        public string? InstallDir { get; set; }
+
+        // UWP/пакетное приложение: путь имеет вид shell:AppsFolder\<AUMID>.
+        [JsonIgnore]
+        public bool IsPackaged => !string.IsNullOrEmpty(Path) &&
+            Path.StartsWith("shell:AppsFolder\\", System.StringComparison.OrdinalIgnoreCase);
+
+        // Пункт "Запуск от администратора" скрыт для UWP (elevation неприменим).
+        [JsonIgnore]
+        public System.Windows.Visibility RunAsAdminVisibility =>
+            IsPackaged ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+
+        // Видимость пункта «Закрыть все окна» — только при нескольких окнах.
+        public System.Windows.Visibility MultipleWindowsVisibility =>
+            (IsRunning && WindowHandles.Count > 1) ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
 
         public string? Icon { get; set; }
         public string? ProcessName { get; set; }
@@ -79,7 +118,6 @@ namespace PlankWin
 
         public void ForceIconUpdate()
         {
-            System.Diagnostics.Debug.WriteLine($"🔄 FORCE ICON UPDATE called for: {Name}");
             // Мы меняем триггер, на который подписана иконка в XAML
             OnPropertyChanged(nameof(WindowHandle));
             OnPropertyChanged(nameof(Path));
@@ -106,7 +144,17 @@ namespace PlankWin
             set { if (_edgePushProgress == value) return; _edgePushProgress = value; OnPropertyChanged(); }
         }
 
+        private bool _isFavorites = false;
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool IsFavorites
+        {
+            get => _isFavorites;
+            set { if (_isFavorites != value) { _isFavorites = value; OnPropertyChanged(); } }
+        }
+
         public event PropertyChangedEventHandler? PropertyChanged;
+        public void NotifyWindowsChanged() => OnPropertyChanged(nameof(MultipleWindowsVisibility));
+
         protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));

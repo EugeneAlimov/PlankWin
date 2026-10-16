@@ -149,6 +149,41 @@ namespace PlankWin
             // и запись совпадает с закреплением того же UWP через drag-in (без дубля кнопок).
             string identityPath = exePath;
 
+            // PWA (Chrome/Edge): окна PWA и обычного Chrome живут в одном процессе,
+            // командная строка/AUMID окна не различают их. Признак PWA — заголовок БЕЗ суффикса браузера.
+            string _exeName = System.IO.Path.GetFileName(exePath);
+            bool _isChrome = _exeName.Equals("chrome.exe", StringComparison.OrdinalIgnoreCase);
+            bool _isEdge = _exeName.Equals("msedge.exe", StringComparison.OrdinalIgnoreCase);
+            if (_isChrome || _isEdge)
+            {
+                var _sb = new System.Text.StringBuilder(256); Win32Helper.GetWindowText(hWnd, _sb, 256);
+                string _title = _sb.ToString();
+                string _browser = _isEdge ? "edge" : "chrome";
+                string _suffix = _isEdge ? " - Microsoft Edge" : " - Google Chrome";
+                bool _isPwaWindow = !string.IsNullOrWhiteSpace(_title) && !_title.EndsWith(_suffix, StringComparison.OrdinalIgnoreCase);
+                if (_isPwaWindow)
+                {
+                    Win32Helper.GetWindowThreadProcessId(hWnd, out uint _pwaPid);
+                    string _cmd = GetProcessCommandLine(_pwaPid);
+                    string _appId = "";
+                    string _profile = "Default";
+                    var _m = System.Text.RegularExpressions.Regex.Match(_cmd, @"--app-id=([a-z]{32})");
+                    var _mp = System.Text.RegularExpressions.Regex.Match(_cmd, "--profile-directory=([^\\s\"]+)");
+                    if (_mp.Success) _profile = _mp.Groups[1].Value;
+                    if (_m.Success)
+                    {
+                        _appId = _m.Groups[1].Value; // командную строку создал этот PWA
+                    }
+                    else
+                    {
+                        // Chrome создал процесс — app-id в cmd нет. Ищем по заголовку в Web Applications.
+                        FindPwaByTitle(_browser, _title, out _appId, out _profile);
+                    }
+                    if (!string.IsNullOrEmpty(_appId))
+                        identityPath = "pwa:" + _browser + ":" + _appId + "@" + _profile;
+                }
+            }
+
             // Сводим к shell:AppsFolder\<AUMID> для пакетных приложений. Два случая:
             //  1) классический UWP — окно-рамка ApplicationFrameWindow (Калькулятор и т.п.);
             //  2) любое приложение, чей exe лежит в WindowsApps (Claude/Electron, Store-приложения),
@@ -190,6 +225,20 @@ namespace PlankWin
                 }
             }
 
+            // Ярлык лаунчера (Steam/Epic): exe угадан неточно или игра запустилась другим exe —
+            // склеиваем по папке установки и запоминаем настоящий exe.
+            if (targetApp == null && identityPath == exePath && !string.IsNullOrEmpty(exePath))
+            {
+                var byDir = Apps.FirstOrDefault(a => a != null && !a.IsPlaceholder && !string.IsNullOrEmpty(a.InstallDir)
+                    && exePath.StartsWith(a.InstallDir!.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase));
+                if (byDir != null)
+                {
+                    byDir.Path = exePath;
+                    targetApp = byDir;
+                    SaveAppsConfig();
+                }
+            }
+
             // ЗАЩИТА ОТ ЧЕХАРДЫ: приложение в процессе удаления (идёт анимация исчезновения).
             // Страховочный таймер не должен его трогать, иначе оживёт зомби-иконка.
             if (targetApp != null && targetApp.IsDeleting)
@@ -200,6 +249,7 @@ namespace PlankWin
                 if (!targetApp.WindowHandles.Contains(hWnd))
                 {
                     targetApp.WindowHandles.Add(hWnd);
+                    targetApp.NotifyWindowsChanged();
                     targetApp.WindowHandle = hWnd;
                     targetApp.RunningInstancesCount = targetApp.WindowHandles.Count;
                     targetApp.IsRunning = true;
@@ -232,6 +282,8 @@ namespace PlankWin
                     RunningInstancesCount = 1
                 };
                 newApp.WindowHandles.Add(hWnd);
+                // Схлопнуть до добавления — контейнер создастся уже невидимым (без мелькающего кадра).
+                newApp.AppearScale = 0.0; newApp.AppearOpacity = 0.0;
                 Apps.Add(newApp);
             }
         }
@@ -242,6 +294,8 @@ namespace PlankWin
             if (targetApp != null)
             {
                 targetApp.WindowHandles.Remove(hWnd);
+                targetApp.NotifyWindowsChanged();
+                RemovePreviewSnapshot(hWnd);
                 targetApp.RunningInstancesCount = targetApp.WindowHandles.Count;
 
                 if (targetApp.RunningInstancesCount == 0)
@@ -251,13 +305,11 @@ namespace PlankWin
 
                     if (targetApp.IsDynamic)
                     {
-                        targetApp.IsDeleting = true;
-                        PositionDock(skipAnimation: false);
-                        Dispatcher.InvokeAsync(async () =>
-                        {
-                            await AnimateItemContainerAsync(targetApp, targetSize: 0, animateOpacity: true, durationMs: 350);
-                            Apps.Remove(targetApp);
-                        });
+                        // Свой аниматор: иконка гаснет -> место стягивается -> панель сжимается. IsDeleting ставим в конце.
+                        AnimatedStackPanel.IsAnimationSuspended = true; // соседи съезжают синхронно через размер ячейки
+                        _dockAnimator.AnimateDisappear(targetApp,
+                            () => PositionDock(skipAnimation: true),
+                            () => { targetApp.IsDeleting = true; Apps.Remove(targetApp); AnimatedStackPanel.IsAnimationSuspended = false; });
                     }
                 }
                 else
@@ -313,10 +365,13 @@ namespace PlankWin
                 if (app.IsDeleting) continue;
                 if (app.WindowHandles.Count == 0) continue;
 
-                var dead = app.WindowHandles.Where(h => !Win32Helper.IsWindow(h)).ToList();
+                // «Мёртвые» для этой панели: закрытые ИЛИ переехавшие на другой монитор
+                // (там их подхватит RefreshRunningApps соседней панели).
+                var dead = app.WindowHandles.Where(h => !Win32Helper.IsWindow(h) || !IsOnMyMonitor(h)).ToList();
                 if (dead.Count == 0) continue;
 
                 foreach (var h in dead) app.WindowHandles.Remove(h);
+                app.NotifyWindowsChanged();
                 app.RunningInstancesCount = app.WindowHandles.Count;
 
                 if (app.RunningInstancesCount == 0)
@@ -326,14 +381,11 @@ namespace PlankWin
 
                     if (app.IsDynamic)
                     {
-                        app.IsDeleting = true;
-                        PositionDock(skipAnimation: false);
                         var appToRemove = app;
-                        Dispatcher.InvokeAsync(async () =>
-                        {
-                            await AnimateItemContainerAsync(appToRemove, targetSize: 0, animateOpacity: true, durationMs: 350);
-                            Apps.Remove(appToRemove);
-                        });
+                        AnimatedStackPanel.IsAnimationSuspended = true;
+                        _dockAnimator.AnimateDisappear(appToRemove,
+                            () => PositionDock(skipAnimation: true),
+                            () => { appToRemove.IsDeleting = true; Apps.Remove(appToRemove); AnimatedStackPanel.IsAnimationSuspended = false; });
                     }
                 }
                 else
@@ -362,6 +414,7 @@ namespace PlankWin
                 targetApp.IsActive = true;
                 targetApp.ActiveWindowIndex = targetApp.WindowHandles.IndexOf(hWnd);
                 targetApp.WindowHandle = hWnd;
+                CacheWindowSnapshot(hWnd);
             }
         }
 
@@ -415,7 +468,20 @@ namespace PlankWin
                 if (Settings.IgnoreProcessNames != null && Settings.IgnoreProcessNames.Any(p => p.Equals(processName, StringComparison.OrdinalIgnoreCase)))
                     return false;
             }
+            // Несколько мониторов: каждая панель показывает только окна своего монитора.
+            if (!IsOnMyMonitor(hWnd)) return false;
             return true;
+        }
+
+        // Окно на мониторе этой панели? (Свёрнутое — по месту до сворачивания: так работает MonitorFromWindow.)
+        private bool IsOnMyMonitor(IntPtr hWnd)
+        {
+            try
+            {
+                if (System.Windows.Forms.Screen.AllScreens.Length < 2) return true;
+                return System.Windows.Forms.Screen.FromHandle(hWnd).DeviceName == _profileName;
+            }
+            catch { return true; }
         }
 
         private void RefreshRunningApps()
@@ -467,6 +533,70 @@ namespace PlankWin
                 Win32Helper.CloseHandle(hProcess);
             }
             return string.Empty;
+        }
+
+        // Поиск app-id PWA по заголовку окна в папке Web Applications (когда --app-id нет в cmd).
+        private readonly Dictionary<string, (string appId, string profile)> _pwaTitleCache = new();
+        private bool FindPwaByTitle(string browser, string title, out string appId, out string profile)
+        {
+            appId = ""; profile = "Default";
+            if (string.IsNullOrWhiteSpace(title)) return false;
+            if (_pwaTitleCache.TryGetValue(title, out var hit)) { appId = hit.appId; profile = hit.profile; return !string.IsNullOrEmpty(appId); }
+            try
+            {
+                string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                string userData = browser == "edge"
+                    ? System.IO.Path.Combine(local, "Microsoft", "Edge", "User Data")
+                    : System.IO.Path.Combine(local, "Google", "Chrome", "User Data");
+                if (System.IO.Directory.Exists(userData))
+                {
+                    foreach (var profDir in System.IO.Directory.GetDirectories(userData))
+                    {
+                        string webApps = System.IO.Path.Combine(profDir, "Web Applications");
+                        if (!System.IO.Directory.Exists(webApps)) continue;
+                        foreach (var crx in System.IO.Directory.GetDirectories(webApps, "_crx_*"))
+                        {
+                            foreach (var ico in System.IO.Directory.GetFiles(crx, "*.ico", System.IO.SearchOption.AllDirectories))
+                            {
+                                string nm = System.IO.Path.GetFileNameWithoutExtension(ico);
+                                if (string.IsNullOrWhiteSpace(nm)) continue;
+                                if (title.IndexOf(nm, StringComparison.OrdinalIgnoreCase) >= 0 || nm.IndexOf(title, StringComparison.OrdinalIgnoreCase) >= 0)
+                                {
+                                    appId = System.IO.Path.GetFileName(crx).Substring("_crx_".Length);
+                                    profile = System.IO.Path.GetFileName(profDir);
+                                    _pwaTitleCache[title] = (appId, profile);
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+            _pwaTitleCache[title] = ("", "Default");
+            return false;
+        }
+
+        // Командная строка процесса (WMI). Нужна для распознавания PWA (chrome --app-id=<hash>).
+        private readonly Dictionary<uint, string> _cmdLineCache = new();
+        private string GetProcessCommandLine(uint pid)
+        {
+            if (pid == 0) return string.Empty;
+            if (_cmdLineCache.TryGetValue(pid, out var cached)) return cached;
+            string result = string.Empty;
+            try
+            {
+                using var searcher = new System.Management.ManagementObjectSearcher(
+                    "SELECT CommandLine FROM Win32_Process WHERE ProcessId = " + pid);
+                foreach (System.Management.ManagementObject mo in searcher.Get())
+                {
+                    result = mo["CommandLine"]?.ToString() ?? string.Empty;
+                    break;
+                }
+            }
+            catch { }
+            _cmdLineCache[pid] = result;
+            return result;
         }
     }
 }

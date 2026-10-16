@@ -1,4 +1,4 @@
-using System.ComponentModel;
+п»їusing System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -9,17 +9,26 @@ namespace PlankWin
     public enum DockPosition { Bottom, Top, Left, Right }
     public enum DockAlignment { Center, Start, End }
 
-    // Режим видимости панели (заменяет старый булев AutoHide).
-    //  AlwaysVisible — панель всегда на экране (резервирование места осмысленно только здесь).
-    //  AutoHide      — панель всегда скрыта, выезжает только по подведению курсора к краю.
-    //  SmartHide     — панель видна, но прячется когда активное окно её перекрывает
-    //                  или когда в фокусе рабочий стол (для доступа к ярлыкам).
+    // Р РµР¶РёРј РІРёРґРёРјРѕСЃС‚Рё РїР°РЅРµР»Рё (Р·Р°РјРµРЅСЏРµС‚ СЃС‚Р°СЂС‹Р№ Р±СѓР»РµРІ AutoHide).
+    //  AlwaysVisible вЂ” РїР°РЅРµР»СЊ РІСЃРµРіРґР° РЅР° СЌРєСЂР°РЅРµ (СЂРµР·РµСЂРІРёСЂРѕРІР°РЅРёРµ РјРµСЃС‚Р° РѕСЃРјС‹СЃР»РµРЅРЅРѕ С‚РѕР»СЊРєРѕ Р·РґРµСЃСЊ).
+    //  AutoHide      вЂ” РїР°РЅРµР»СЊ РІСЃРµРіРґР° СЃРєСЂС‹С‚Р°, РІС‹РµР·Р¶Р°РµС‚ С‚РѕР»СЊРєРѕ РїРѕ РїРѕРґРІРµРґРµРЅРёСЋ РєСѓСЂСЃРѕСЂР° Рє РєСЂР°СЋ.
+    //  SmartHide     вЂ” РїР°РЅРµР»СЊ РІРёРґРЅР°, РЅРѕ РїСЂСЏС‡РµС‚СЃСЏ РєРѕРіРґР° Р°РєС‚РёРІРЅРѕРµ РѕРєРЅРѕ РµС‘ РїРµСЂРµРєСЂС‹РІР°РµС‚
+    //                  РёР»Рё РєРѕРіРґР° РІ С„РѕРєСѓСЃРµ СЂР°Р±РѕС‡РёР№ СЃС‚РѕР» (РґР»СЏ РґРѕСЃС‚СѓРїР° Рє СЏСЂР»С‹РєР°Рј).
     public enum DockVisibilityMode { AlwaysVisible, AutoHide, SmartHide }
+
+    public enum PreviewOrientationMode { Auto, Horizontal, Vertical }
+
+    public enum PeekEasingMode { Linear, EaseIn, EaseOut, EaseInOut, Sine }
+
+    public enum FavoritesLayoutMode { List, Grid }
+
+    public enum FavoritesOpenMode { Click, Hover }
 
     public sealed class DockSettings : INotifyPropertyChanged
     {
-        // Список процессов, которые не должны появляться в доке
+        // РЎРїРёСЃРѕРє РїСЂРѕС†РµСЃСЃРѕРІ, РєРѕС‚РѕСЂС‹Рµ РЅРµ РґРѕР»Р¶РЅС‹ РїРѕСЏРІР»СЏС‚СЊСЃСЏ РІ РґРѕРєРµ
         public System.Collections.ObjectModel.ObservableCollection<string> IgnoreProcessNames { get; set; } = new();
+        public System.Collections.ObjectModel.ObservableCollection<string> FavoriteFolders { get; set; } = new();
 
         private bool _runAtStartup = false;
         public bool RunAtStartup
@@ -28,25 +37,47 @@ namespace PlankWin
             set { if (_runAtStartup != value) { _runAtStartup = value; OnPropertyChanged(); } }
         }
 
-        // --- БАЗОВОЕ ПОВЕДЕНИЕ ---
+        // --- Р‘РђР—РћР’РћР• РџРћР’Р•Р”Р•РќРР• ---
         private DockPosition _position = DockPosition.Bottom;
         private DockAlignment _alignment = DockAlignment.Center;
         private bool _isAdaptive = true;
         private bool _reserveScreenSpace = true;
+        private int _edgeShowDelayMs = 250;
+        private int _hideDelayMs = 250;
+        private bool _enablePreviews = true;
+        private int _previewDelayMs = 450;
+        private double _peekDim = 0.25;
+        private double _peekBlur = 8;
+        private int _peekFadeMs = 500;
+        private string _peekTint = "#000000";
+        private PeekEasingMode _peekEasing = PeekEasingMode.EaseOut;
+        private PreviewOrientationMode _previewOrientation = PreviewOrientationMode.Auto;
+        private bool _enableFavorites = false;
+        private bool _useAccentShadow = false;
+        private int _accentIntensity = 50;
+        private bool _followWindowsColor = false;
+        private FavoritesLayoutMode _favoritesLayout = FavoritesLayoutMode.List;
+        private FavoritesOpenMode _favoritesOpenMode = FavoritesOpenMode.Click;
+        private int _favoritesIndex = 0;
+        private double _favListWidth = 240;
+        private double _favListHeight = 300;
+        private double _favGridWidth = 320;
+        private double _favGridHeight = 280;
         private DockVisibilityMode _visibilityMode = DockVisibilityMode.AlwaysVisible;
         //private string[] _ignoreProcessNames = Array.Empty<string>();
-        private string _targetMonitor = ""; // Пустая строка = Основной монитор
+        private string _targetMonitor = ""; // РџСѓСЃС‚Р°СЏ СЃС‚СЂРѕРєР° = РћСЃРЅРѕРІРЅРѕР№ РјРѕРЅРёС‚РѕСЂ
 
-        // --- РАЗМЕРЫ ---
+        // --- Р РђР—РњР•Р Р« ---
         private double _thickness = 64;
         private double _iconSize = 44;
+        private double _effectiveIconSize = 44;
         private double _iconMargin = 6;
         private double _panelPadding = 10;
         private double _edgeMargin = 10;
         private double _panelCornerRadius = 16;
         private double _iconCornerRadius = 12;
 
-        // --- ЦВЕТА (HEX) ---
+        // --- Р¦Р’Р•РўРђ (HEX) ---
         private string _backgroundColor = "#151515";
         private double _backgroundOpacity = 0.8;
         private string _borderColor = "#33FFFFFF";
@@ -54,7 +85,7 @@ namespace PlankWin
         private string _hoverHighlightColor = "#15FFFFFF";
 
         // -------------------------------------------------------------------
-        // СВОЙСТВА (PROPERTIES) ДЛЯ ПРИВЯЗКИ
+        // РЎР’РћР™РЎРўР’Рђ (PROPERTIES) Р”Р›РЇ РџР РР’РЇР—РљР
         // -------------------------------------------------------------------
 
         public DockPosition Position
@@ -70,7 +101,7 @@ namespace PlankWin
         }
 
         private DockPosition _uiPosition = DockPosition.Bottom;
-        [JsonIgnore] // Не сохраняем это в файл настроек, это только для визуала
+        [JsonIgnore] // РќРµ СЃРѕС…СЂР°РЅСЏРµРј СЌС‚Рѕ РІ С„Р°Р№Р» РЅР°СЃС‚СЂРѕРµРє, СЌС‚Рѕ С‚РѕР»СЊРєРѕ РґР»СЏ РІРёР·СѓР°Р»Р°
         public DockPosition UIPosition
         {
             get => _uiPosition;
@@ -102,7 +133,7 @@ namespace PlankWin
             get => _thickness;
             set
             {
-                double clamped = Math.Clamp(value, 4, 128);
+                double clamped = Math.Clamp(value, 4, 256);
                 if (_thickness != clamped)
                 {
                     _thickness = clamped;
@@ -125,6 +156,14 @@ namespace PlankWin
                     UpdateShelfModeHysteresis();
                 }
             }
+        }
+
+        // Р¤Р°РєС‚РёС‡РµСЃРєРёР№ СЂР°Р·РјРµСЂ РёРєРѕРЅРѕРє (СѓР¶РёРјР°РµС‚СЃСЏ РїСЂРё РїРµСЂРµРїРѕР»РЅРµРЅРёРё). РќР• СЃРѕС…СЂР°РЅСЏРµС‚СЃСЏ.
+        [System.Text.Json.Serialization.JsonIgnore]
+        public double EffectiveIconSize
+        {
+            get => _effectiveIconSize;
+            set { if (_effectiveIconSize != value) { _effectiveIconSize = value; OnPropertyChanged(); } }
         }
 
         public double IconMargin
@@ -193,6 +232,139 @@ namespace PlankWin
             set { if (_reserveScreenSpace != value) { _reserveScreenSpace = value; OnPropertyChanged(); } }
         }
 
+        // Auto-hide timings in ms (exposed as sliders in settings).
+        public int EdgeShowDelayMs
+        {
+            get => _edgeShowDelayMs;
+            set { int c = Math.Clamp(value, 50, 800); if (_edgeShowDelayMs != c) { _edgeShowDelayMs = c; OnPropertyChanged(); } }
+        }
+
+        public int HideDelayMs
+        {
+            get => _hideDelayMs;
+            set { int c = Math.Clamp(value, 50, 1000); if (_hideDelayMs != c) { _hideDelayMs = c; OnPropertyChanged(); } }
+        }
+
+        // Window previews on hover.
+        public bool EnablePreviews
+        {
+            get => _enablePreviews;
+            set { if (_enablePreviews != value) { _enablePreviews = value; OnPropertyChanged(); } }
+        }
+
+        public int PreviewDelayMs
+        {
+            get => _previewDelayMs;
+            set { int c = Math.Clamp(value, 100, 1500); if (_previewDelayMs != c) { _previewDelayMs = c; OnPropertyChanged(); } }
+        }
+
+        // РњР°С‚РѕРІС‹Р№ СЃР»РѕР№ (Aero Peek).
+        public double PeekDim
+        {
+            get => _peekDim;
+            set { double c = Math.Clamp(value, 0, 1); if (_peekDim != c) { _peekDim = c; OnPropertyChanged(); } }
+        }
+
+        public double PeekBlur
+        {
+            get => _peekBlur;
+            set { double c = Math.Clamp(value, 0, 40); if (_peekBlur != c) { _peekBlur = c; OnPropertyChanged(); } }
+        }
+
+        public int PeekFadeMs
+        {
+            get => _peekFadeMs;
+            set { int c = Math.Clamp(value, 60, 1500); if (_peekFadeMs != c) { _peekFadeMs = c; OnPropertyChanged(); } }
+        }
+
+        public string PeekTint
+        {
+            get => _peekTint;
+            set { if (_peekTint != value) { _peekTint = value ?? "#000000"; OnPropertyChanged(); } }
+        }
+
+        public PeekEasingMode PeekEasing
+        {
+            get => _peekEasing;
+            set { if (_peekEasing != value) { _peekEasing = value; OnPropertyChanged(); } }
+        }
+
+        public PreviewOrientationMode PreviewOrientation
+        {
+            get => _previewOrientation;
+            set { if (_previewOrientation != value) { _previewOrientation = value; OnPropertyChanged(); } }
+        }
+
+        // РР·Р±СЂР°РЅРЅС‹Рµ РїР°РїРєРё.
+        public bool EnableFavorites
+        {
+            get => _enableFavorites;
+            set { if (_enableFavorites != value) { _enableFavorites = value; OnPropertyChanged(); } }
+        }
+
+        public bool UseAccentShadow
+        {
+            get => _useAccentShadow;
+            set { if (_useAccentShadow != value) { _useAccentShadow = value; OnPropertyChanged(); } }
+        }
+
+        // РРЅС‚РµРЅСЃРёРІРЅРѕСЃС‚СЊ Р°РєС†РµРЅС‚Р° 0..100 (50 = Р±Р°Р·РѕРІС‹Р№ РІРёРґ).
+        public int AccentIntensity
+        {
+            get => _accentIntensity;
+            set { value = Math.Clamp(value, 0, 100); if (_accentIntensity != value) { _accentIntensity = value; OnPropertyChanged(); } }
+        }
+
+        // Р¦РІРµС‚ РїР°РЅРµР»Рё СЃР»РµРґСѓРµС‚ Р·Р° С†РІРµС‚РѕРј Windows (С‚Р°СЃРєР±Р°СЂР°) Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё.
+        public bool FollowWindowsColor
+        {
+            get => _followWindowsColor;
+            set { if (_followWindowsColor != value) { _followWindowsColor = value; OnPropertyChanged(); } }
+        }
+
+        public int FavoritesIndex
+        {
+            get => _favoritesIndex;
+            set { if (_favoritesIndex != value) { _favoritesIndex = value; OnPropertyChanged(); } }
+        }
+
+        public FavoritesLayoutMode FavoritesLayout
+        {
+            get => _favoritesLayout;
+            set { if (_favoritesLayout != value) { _favoritesLayout = value; OnPropertyChanged(); } }
+        }
+
+        public FavoritesOpenMode FavoritesOpenMode
+        {
+            get => _favoritesOpenMode;
+            set { if (_favoritesOpenMode != value) { _favoritesOpenMode = value; OnPropertyChanged(); } }
+        }
+
+        // Р Р°Р·РјРµСЂС‹ РѕРєРЅР° РёР·Р±СЂР°РЅРЅРѕРіРѕ (РѕС‚РґРµР»СЊРЅРѕ РґР»СЏ СЃРїРёСЃРєР° Рё СЃРµС‚РєРё).
+        public double FavListWidth
+        {
+            get => _favListWidth;
+            set { double c = Math.Max(160, value); if (_favListWidth != c) { _favListWidth = c; OnPropertyChanged(); } }
+        }
+
+        public double FavListHeight
+        {
+            get => _favListHeight;
+            set { double c = Math.Max(120, value); if (_favListHeight != c) { _favListHeight = c; OnPropertyChanged(); } }
+        }
+
+        public double FavGridWidth
+        {
+            get => _favGridWidth;
+            set { double c = Math.Max(200, value); if (_favGridWidth != c) { _favGridWidth = c; OnPropertyChanged(); } }
+        }
+
+        public double FavGridHeight
+        {
+            get => _favGridHeight;
+            set { double c = Math.Max(120, value); if (_favGridHeight != c) { _favGridHeight = c; OnPropertyChanged(); } }
+        }
+
         public DockVisibilityMode VisibilityMode
         {
             get => _visibilityMode;
@@ -202,25 +374,25 @@ namespace PlankWin
                 {
                     _visibilityMode = value;
                     OnPropertyChanged();
-                    // Уведомляем и старый мостик, чтобы подписчики на AutoHide тоже среагировали.
+                    // РЈРІРµРґРѕРјР»СЏРµРј Рё СЃС‚Р°СЂС‹Р№ РјРѕСЃС‚РёРє, С‡С‚РѕР±С‹ РїРѕРґРїРёСЃС‡РёРєРё РЅР° AutoHide С‚РѕР¶Рµ СЃСЂРµР°РіРёСЂРѕРІР°Р»Рё.
                     OnPropertyChanged(nameof(AutoHide));
                 }
             }
         }
 
-        // ВРЕМЕННЫЙ МОСТИК СОВМЕСТИМОСТИ.
-        // Старый код по всему проекту читает Settings.AutoHide. Пока он не переведён
-        // на VisibilityMode, это вычисляемое свойство сохраняет компиляцию и логику:
-        //   AutoHide == true  <=> панель в каком-либо скрывающемся режиме (AutoHide или SmartHide)
-        //   AutoHide == false <=> панель всегда видима (AlwaysVisible)
-        // ПОДЛЕЖИТ УДАЛЕНИЮ после перевода всех вызовов на VisibilityMode.
+        // Р’Р Р•РњР•РќРќР«Р™ РњРћРЎРўРРљ РЎРћР’РњР•РЎРўРРњРћРЎРўР.
+        // РЎС‚Р°СЂС‹Р№ РєРѕРґ РїРѕ РІСЃРµРјСѓ РїСЂРѕРµРєС‚Сѓ С‡РёС‚Р°РµС‚ Settings.AutoHide. РџРѕРєР° РѕРЅ РЅРµ РїРµСЂРµРІРµРґС‘РЅ
+        // РЅР° VisibilityMode, СЌС‚Рѕ РІС‹С‡РёСЃР»СЏРµРјРѕРµ СЃРІРѕР№СЃС‚РІРѕ СЃРѕС…СЂР°РЅСЏРµС‚ РєРѕРјРїРёР»СЏС†РёСЋ Рё Р»РѕРіРёРєСѓ:
+        //   AutoHide == true  <=> РїР°РЅРµР»СЊ РІ РєР°РєРѕРј-Р»РёР±Рѕ СЃРєСЂС‹РІР°СЋС‰РµРјСЃСЏ СЂРµР¶РёРјРµ (AutoHide РёР»Рё SmartHide)
+        //   AutoHide == false <=> РїР°РЅРµР»СЊ РІСЃРµРіРґР° РІРёРґРёРјР° (AlwaysVisible)
+        // РџРћР”Р›Р•Р–РРў РЈР”РђР›Р•РќРР® РїРѕСЃР»Рµ РїРµСЂРµРІРѕРґР° РІСЃРµС… РІС‹Р·РѕРІРѕРІ РЅР° VisibilityMode.
         [JsonIgnore]
         public bool AutoHide
         {
             get => _visibilityMode != DockVisibilityMode.AlwaysVisible;
             set
             {
-                // Сохраняем старое поведение записи: true -> SmartHide, false -> AlwaysVisible.
+                // РЎРѕС…СЂР°РЅСЏРµРј СЃС‚Р°СЂРѕРµ РїРѕРІРµРґРµРЅРёРµ Р·Р°РїРёСЃРё: true -> SmartHide, false -> AlwaysVisible.
                 VisibilityMode = value ? DockVisibilityMode.SmartHide : DockVisibilityMode.AlwaysVisible;
             }
         }
@@ -238,10 +410,10 @@ namespace PlankWin
 
         private void UpdateShelfModeHysteresis()
         {
-            // Тот же самый коэффициент
+            // РўРѕС‚ Р¶Рµ СЃР°РјС‹Р№ РєРѕСЌС„С„РёС†РёРµРЅС‚
             double k = IconSize / 44.0;
 
-            // НОВЫЙ ПОРОГ: масштабируется вместе с размером капсулы выделения!
+            // РќРћР’Р«Р™ РџРћР РћР“: РјР°СЃС€С‚Р°Р±РёСЂСѓРµС‚СЃСЏ РІРјРµСЃС‚Рµ СЃ СЂР°Р·РјРµСЂРѕРј РєР°РїСЃСѓР»С‹ РІС‹РґРµР»РµРЅРёСЏ!
             double threshold = IconSize + Math.Max(20.0, 36.0 * k);
 
             if (!IsShelfMode && Thickness <= threshold - 2)
@@ -258,7 +430,7 @@ namespace PlankWin
 
     public static class PlankConfig
     {
-        // Убрали жесткую константу ConfigFileName
+        // РЈР±СЂР°Р»Рё Р¶РµСЃС‚РєСѓСЋ РєРѕРЅСЃС‚Р°РЅС‚Сѓ ConfigFileName
 
         private static JsonSerializerOptions GetJsonOptions() => new JsonSerializerOptions
         {
@@ -267,13 +439,30 @@ namespace PlankWin
             PropertyNameCaseInsensitive = true
         };
 
-        // Теперь мы передаем имя профиля (например, "Primary" или "DISPLAY2")
+        // РўРµРїРµСЂСЊ РјС‹ РїРµСЂРµРґР°РµРј РёРјСЏ РїСЂРѕС„РёР»СЏ (РЅР°РїСЂРёРјРµСЂ, "Primary" РёР»Рё "DISPLAY2")
+        // РџР°РїРєР° РґР°РЅРЅС‹С… РїСЂРёР»РѕР¶РµРЅРёСЏ (РїРµСЂРµР¶РёРІР°РµС‚ РѕР±РЅРѕРІР»РµРЅРёСЏ/СЂРµР»РёР·С‹): %LocalAppData%\PlankWin
+        public static string GetDataDir()
+        {
+            string dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "PlankWin");
+            try { Directory.CreateDirectory(dir); } catch { }
+            return dir;
+        }
+
         public static DockSettings Load(string baseDir, string profileName = "Primary")
         {
-            // Очищаем имя профиля от запрещенных символов (например, слэшей из \\.\DISPLAY2)
+            // РћС‡РёС‰Р°РµРј РёРјСЏ РїСЂРѕС„РёР»СЏ РѕС‚ Р·Р°РїСЂРµС‰РµРЅРЅС‹С… СЃРёРјРІРѕР»РѕРІ (РЅР°РїСЂРёРјРµСЂ, СЃР»СЌС€РµР№ РёР· \\.\DISPLAY2)
             string safeProfileName = string.Join("_", profileName.Split(Path.GetInvalidFileNameChars()));
             string fileName = $"settings_{safeProfileName}.json";
-            var path = Path.Combine(baseDir, fileName);
+            string dataDir = GetDataDir();
+            var path = Path.Combine(dataDir, fileName);
+            // РњРёРіСЂР°С†РёСЏ РЅР°СЃС‚СЂРѕРµРє РёР· СЃС‚Р°СЂРѕРіРѕ РјРµСЃС‚Р° (СЂСЏРґРѕРј СЃ exe) РїСЂРё РїРµСЂРІРѕРј Р·Р°РїСѓСЃРєРµ РЅРѕРІРѕР№ РІРµСЂСЃРёРё.
+            var legacyPath = Path.Combine(baseDir, fileName);
+            if (!File.Exists(path) && File.Exists(legacyPath))
+            {
+                try { File.Copy(legacyPath, path); } catch { }
+            }
 
             if (!File.Exists(path))
             {
@@ -286,16 +475,16 @@ namespace PlankWin
                 var json = File.ReadAllText(path);
                 var settings = JsonSerializer.Deserialize<DockSettings>(json, GetJsonOptions()) ?? new DockSettings();
 
-                // === ИСПРАВЛЕННАЯ СТРОКА ===
+                // === РРЎРџР РђР’Р›Р•РќРќРђРЇ РЎРўР РћРљРђ ===
                 if (settings.IgnoreProcessNames == null)
                     settings.IgnoreProcessNames = new System.Collections.ObjectModel.ObservableCollection<string>();
 
                 settings.Thickness = settings.Thickness;
 
-                // === ЧИСТАЯ МИГРАЦИЯ: старый булев AutoHide -> новый VisibilityMode ===
-                // Старые профили содержат "AutoHide", но не содержат "VisibilityMode".
-                // Определяем это явно по JSON и проставляем режим детерминированно,
-                // не полагаясь на порядок применения свойств десериализатором.
+                // === Р§РРЎРўРђРЇ РњРР“Р РђР¦РРЇ: СЃС‚Р°СЂС‹Р№ Р±СѓР»РµРІ AutoHide -> РЅРѕРІС‹Р№ VisibilityMode ===
+                // РЎС‚Р°СЂС‹Рµ РїСЂРѕС„РёР»Рё СЃРѕРґРµСЂР¶Р°С‚ "AutoHide", РЅРѕ РЅРµ СЃРѕРґРµСЂР¶Р°С‚ "VisibilityMode".
+                // РћРїСЂРµРґРµР»СЏРµРј СЌС‚Рѕ СЏРІРЅРѕ РїРѕ JSON Рё РїСЂРѕСЃС‚Р°РІР»СЏРµРј СЂРµР¶РёРј РґРµС‚РµСЂРјРёРЅРёСЂРѕРІР°РЅРЅРѕ,
+                // РЅРµ РїРѕР»Р°РіР°СЏСЃСЊ РЅР° РїРѕСЂСЏРґРѕРє РїСЂРёРјРµРЅРµРЅРёСЏ СЃРІРѕР№СЃС‚РІ РґРµСЃРµСЂРёР°Р»РёР·Р°С‚РѕСЂРѕРј.
                 try
                 {
                     using var doc = JsonDocument.Parse(json);
@@ -306,13 +495,13 @@ namespace PlankWin
                     if (!hasVisibilityMode && hasLegacyAutoHide)
                     {
                         bool legacyAutoHide = legacyAutoHideEl.ValueKind == JsonValueKind.True;
-                        // true -> SmartHide (старое "умное скрытие"), false -> AlwaysVisible.
+                        // true -> SmartHide (СЃС‚Р°СЂРѕРµ "СѓРјРЅРѕРµ СЃРєСЂС‹С‚РёРµ"), false -> AlwaysVisible.
                         settings.VisibilityMode = legacyAutoHide
                             ? DockVisibilityMode.SmartHide
                             : DockVisibilityMode.AlwaysVisible;
                     }
                 }
-                catch { /* если JSON не распарсился как документ — оставляем значение из десериализации */ }
+                catch { /* РµСЃР»Рё JSON РЅРµ СЂР°СЃРїР°СЂСЃРёР»СЃСЏ РєР°Рє РґРѕРєСѓРјРµРЅС‚ вЂ” РѕСЃС‚Р°РІР»СЏРµРј Р·РЅР°С‡РµРЅРёРµ РёР· РґРµСЃРµСЂРёР°Р»РёР·Р°С†РёРё */ }
 
                 return settings;
             }
@@ -323,7 +512,7 @@ namespace PlankWin
         {
             string safeProfileName = string.Join("_", profileName.Split(Path.GetInvalidFileNameChars()));
             string fileName = $"settings_{safeProfileName}.json";
-            TrySave(Path.Combine(baseDir, fileName), settings);
+            TrySave(Path.Combine(GetDataDir(), fileName), settings);
         }
 
         private static void TrySave(string path, DockSettings settings)

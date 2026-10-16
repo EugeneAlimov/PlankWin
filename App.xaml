@@ -7,6 +7,51 @@
         <SolidColorBrush x:Key="MenuBorderBrush" Color="#DCDCDC" />
         <SolidColorBrush x:Key="MenuTextBrush" Color="Black" />
         <SolidColorBrush x:Key="MenuHoverBrush" Color="#EAEAEA" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#0078D7" />
+        <!-- Системные скругления (Win11). На Win10 в App.OnStartup заменяются на 0. -->
+        <CornerRadius x:Key="SysRadiusL">8</CornerRadius>
+        <CornerRadius x:Key="SysRadiusM">6</CornerRadius>
+        <CornerRadius x:Key="SysRadiusS">4</CornerRadius>
+        <Style TargetType="ScrollBar">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Width" Value="8"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="Transparent">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False" IsTabStop="False"/>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border x:Name="ThumbBorder" CornerRadius="{DynamicResource SysRadiusS}" Background="#66888888" Margin="2,2"/>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="ThumbBorder" Property="Background" Value="#99AAAAAA"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False" IsTabStop="False"/>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Width" Value="Auto"/>
+                    <Setter Property="Height" Value="8"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
         <Style TargetType="ContextMenu">
             <Setter Property="SnapsToDevicePixels" Value="True" />
             <Setter Property="OverridesDefaultStyle" Value="True" />
@@ -15,7 +60,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ContextMenu">
-                        <Border Margin="10,10,10,15" Background="{DynamicResource MenuBgBrush}" BorderBrush="{DynamicResource MenuBorderBrush}" BorderThickness="1" CornerRadius="8">
+                        <Border Margin="10,10,10,15" Background="{DynamicResource MenuBgBrush}" BorderBrush="{DynamicResource MenuBorderBrush}" BorderThickness="1" CornerRadius="{DynamicResource SysRadiusL}">
                             <Border.Effect>
                                 <DropShadowEffect BlurRadius="15" ShadowDepth="4" Opacity="0.2" Direction="270" />
                             </Border.Effect>
@@ -32,12 +77,31 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="MenuItem">
-                        <Border x:Name="Bd" Padding="10,8,15,8" Margin="4,2" CornerRadius="4" Background="Transparent">
+                        <Border x:Name="Bd" Padding="10,8,15,8" Margin="4,2" CornerRadius="{DynamicResource SysRadiusS}" Background="Transparent">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="28" />
                                     <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
+
+                                <!-- Стрелка и всплывающее подменю (только для пунктов с вложенными элементами) -->
+                                <TextBlock x:Name="SubArrow" Grid.Column="2" Text="&#xE76C;" Visibility="Collapsed"
+                                           FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="10" Margin="14,0,-6,0"
+                                           VerticalAlignment="Center" Foreground="{TemplateBinding Foreground}" Opacity="0.7"/>
+                                <Popup x:Name="PART_Popup" Placement="Right" HorizontalOffset="-2" VerticalOffset="-22"
+                                       AllowsTransparency="True" Focusable="False" PopupAnimation="Fade"
+                                       IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}">
+                                    <Border Margin="10,10,10,15" Background="{DynamicResource MenuBgBrush}" BorderBrush="{DynamicResource MenuBorderBrush}"
+                                            BorderThickness="1" CornerRadius="{DynamicResource SysRadiusL}">
+                                        <Border.Effect>
+                                            <DropShadowEffect BlurRadius="15" ShadowDepth="4" Opacity="0.2" Direction="270" />
+                                        </Border.Effect>
+                                        <ScrollViewer MaxHeight="560" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,4">
+                                            <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" KeyboardNavigation.TabNavigation="Cycle"/>
+                                        </ScrollViewer>
+                                    </Border>
+                                </Popup>
 
                                 <TextBlock Text="{TemplateBinding Icon}" 
                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" 
@@ -56,6 +120,12 @@
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.5" />
                             </Trigger>
+                            <Trigger Property="Role" Value="SubmenuHeader">
+                                <Setter TargetName="SubArrow" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsSubmenuOpen" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource MenuHoverBrush}" />
+                            </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -68,6 +138,27 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="Separator">
                         <Border Height="1" Background="{DynamicResource MenuBorderBrush}" Margin="4,4" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Подсказки в тон теме (вместо системного жёлто-белого прямоугольника). -->
+        <Style TargetType="ToolTip">
+            <Setter Property="Foreground" Value="{DynamicResource MenuTextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource MenuBgBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource MenuBorderBrush}"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="HasDropShadow" Value="False"/>
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToolTip">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                                CornerRadius="{DynamicResource SysRadiusS}" Padding="8,4">
+                            <ContentPresenter/>
+                        </Border>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -95,7 +186,7 @@
 
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Track" Property="Background" Value="#0078D7" />
+                                <Setter TargetName="Track" Property="Background" Value="{DynamicResource AccentBrush}" />
 
                                 <Trigger.EnterActions>
                                     <BeginStoryboard>

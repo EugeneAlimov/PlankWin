@@ -1,4 +1,5 @@
 ﻿using System.Windows;
+using System.Windows.Controls;
 
 namespace PlankWin
 {
@@ -55,6 +56,11 @@ namespace PlankWin
             DataContext = currentSettings;
 
             ParseHexToSliders(currentSettings.BackgroundColor);
+            ParseHexToTintSliders(currentSettings.PeekTint);
+            FillLanguageCombo();
+            // Цвет может смениться извне (авто-цвет Windows) — держим слайдеры в синхроне.
+            currentSettings.PropertyChanged += Settings_ColorChanged;
+            Closed += (s, e) => currentSettings.PropertyChanged -= Settings_ColorChanged;
             RefreshFilterList();
         }
 
@@ -142,6 +148,48 @@ namespace PlankWin
             this.Close();
         }
 
+        private void BtnExportConfig_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new Microsoft.Win32.SaveFileDialog
+            {
+                FileName = $"PlankWin-config-{System.DateTime.Now:yyyy-MM-dd}.zip",
+                Filter = "PlankWin config (*.zip)|*.zip",
+                DefaultExt = ".zip"
+            };
+            if (dlg.ShowDialog(this) != true) return;
+            try
+            {
+                ConfigTransfer.Export(dlg.FileName);
+                MessageBox.Show(this, Loc.T("cfg_export_done"), "PlankWin", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (System.Exception ex)
+            {
+                MessageBox.Show(this, ex.Message, "PlankWin", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void BtnImportConfig_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "PlankWin config (*.zip)|*.zip" };
+            if (dlg.ShowDialog(this) != true) return;
+            if (!ConfigTransfer.IsValid(dlg.FileName))
+            {
+                MessageBox.Show(this, Loc.T("cfg_bad_file"), "PlankWin", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            if (MessageBox.Show(this, Loc.T("cfg_import_confirm"), "PlankWin", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+                return;
+            try
+            {
+                ConfigTransfer.Import(dlg.FileName);
+                MainWindow.RestartApp();
+            }
+            catch (System.Exception ex)
+            {
+                MessageBox.Show(this, ex.Message, "PlankWin", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private void BtnRefreshFilter_Click(object sender, RoutedEventArgs e)
         {
             RefreshFilterList();
@@ -213,7 +261,35 @@ namespace PlankWin
             finally { _isUpdatingColor = false; }
         }
 
-        private void SliderRGB_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        private bool _isUpdatingTint = false;
+        private void ParseHexToTintSliders(string hex)
+        {
+            try
+            {
+                _isUpdatingTint = true;
+                if (string.IsNullOrEmpty(hex)) hex = "#000000";
+                if (!hex.StartsWith("#")) hex = "#" + hex;
+                var c = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hex);
+                TintSliderR.Value = c.R;
+                TintSliderG.Value = c.G;
+                TintSliderB.Value = c.B;
+                TintPreview.Background = new System.Windows.Media.SolidColorBrush(c);
+            }
+            catch { }
+            finally { _isUpdatingTint = false; }
+        }
+
+        private void TintRGB_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_isUpdatingTint || this.DataContext is not DockSettings settings) return;
+            byte r = (byte)TintSliderR.Value;
+            byte g = (byte)TintSliderG.Value;
+            byte b = (byte)TintSliderB.Value;
+            settings.PeekTint = $"#{r:X2}{g:X2}{b:X2}";
+            TintPreview.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(r, g, b));
+        }
+
+                private void SliderRGB_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             if (_isUpdatingColor || this.DataContext is not DockSettings settings) return;
 
@@ -221,7 +297,39 @@ namespace PlankWin
             byte g = (byte)SliderG.Value;
             byte b = (byte)SliderB.Value;
 
+            settings.FollowWindowsColor = false; // ручной цвет отключает авто
             settings.BackgroundColor = $"#{r:X2}{g:X2}{b:X2}";
+        }
+
+        // ===== Язык =====
+        private bool _fillingLang;
+        private void FillLanguageCombo()
+        {
+            _fillingLang = true;
+            CmbLanguage.Items.Clear();
+            CmbLanguage.Items.Add(new ComboBoxItem { Content = Loc.T("lang_auto"), Tag = "auto" });
+            for (int i = 0; i < Loc.Codes.Length; i++)
+                CmbLanguage.Items.Add(new ComboBoxItem { Content = Loc.NativeNames[i], Tag = Loc.Codes[i] });
+            string cur = GlobalConfig.Language;
+            foreach (ComboBoxItem it in CmbLanguage.Items)
+                if ((string)it.Tag == cur) { CmbLanguage.SelectedItem = it; break; }
+            if (CmbLanguage.SelectedItem == null) CmbLanguage.SelectedIndex = 0;
+            _fillingLang = false;
+        }
+
+        private void CmbLanguage_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_fillingLang || CmbLanguage.SelectedItem is not ComboBoxItem it) return;
+            GlobalConfig.Language = (string)it.Tag;
+            Loc.Apply(GlobalConfig.Language);
+            // Пункт «Авто» перевести на новый язык (его текст задан кодом, не ресурсом).
+            if (CmbLanguage.Items[0] is ComboBoxItem auto) auto.Content = Loc.T("lang_auto");
+        }
+
+        private void Settings_ColorChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName != nameof(DockSettings.BackgroundColor) || sender is not DockSettings s) return;
+            Dispatcher.InvokeAsync(() => ParseHexToSliders(s.BackgroundColor));
         }
     }
 }

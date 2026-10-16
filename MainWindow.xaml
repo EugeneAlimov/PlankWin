@@ -18,6 +18,7 @@
         <local:MarginConverter x:Key="MarginConverter" />
         <local:HexToBrushConverter x:Key="HexToBrushConverter" />
         <local:SmartContrastConverter x:Key="SmartContrastConverter" />
+        <local:WingGradientConverter x:Key="WingGradientConverter" />
         <local:DockMorphEngineConverter x:Key="DockMorphEngine" />
 
         <ItemsPanelTemplate x:Key="VerticalPanel">
@@ -40,17 +41,19 @@
                             <Grid.Width>
                                 <MultiBinding Converter="{StaticResource DockMorphEngine}" ConverterParameter="CellW">
                                     <Binding Path="DataContext.Settings.Thickness" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
-                                    <Binding Path="DataContext.Settings.IconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
+                                    <Binding Path="DataContext.Settings.EffectiveIconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                     <Binding Path="DataContext.Settings.UIPosition" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                     <Binding Path="(local:DockPhysics.MorphProgress)" RelativeSource="{RelativeSource TemplatedParent}"/>
+                                    <Binding Path="AppearScale"/>
                                 </MultiBinding>
                             </Grid.Width>
                             <Grid.Height>
                                 <MultiBinding Converter="{StaticResource DockMorphEngine}" ConverterParameter="CellH">
                                     <Binding Path="DataContext.Settings.Thickness" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
-                                    <Binding Path="DataContext.Settings.IconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
+                                    <Binding Path="DataContext.Settings.EffectiveIconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                     <Binding Path="DataContext.Settings.UIPosition" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                     <Binding Path="(local:DockPhysics.MorphProgress)" RelativeSource="{RelativeSource TemplatedParent}"/>
+                                    <Binding Path="AppearScale"/>
                                 </MultiBinding>
                             </Grid.Height>
 
@@ -62,7 +65,7 @@
                                     <Border.CornerRadius>
                                         <MultiBinding Converter="{StaticResource DockMorphEngine}" ConverterParameter="OuterRadius">
                                             <Binding Path="DataContext.Settings.Thickness" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
-                                            <Binding Path="DataContext.Settings.IconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
+                                            <Binding Path="DataContext.Settings.EffectiveIconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                             <Binding Path="DataContext.Settings.UIPosition" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                             <Binding Path="(local:DockPhysics.MorphProgress)" RelativeSource="{RelativeSource TemplatedParent}"/>
                                         </MultiBinding>
@@ -70,7 +73,7 @@
                                     <Border.Margin>
                                         <MultiBinding Converter="{StaticResource DockMorphEngine}" ConverterParameter="OuterMargin">
                                             <Binding Path="DataContext.Settings.Thickness" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
-                                            <Binding Path="DataContext.Settings.IconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
+                                            <Binding Path="DataContext.Settings.EffectiveIconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                             <Binding Path="DataContext.Settings.UIPosition" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                             <Binding Path="(local:DockPhysics.MorphProgress)" RelativeSource="{RelativeSource TemplatedParent}"/>
                                         </MultiBinding>
@@ -78,7 +81,7 @@
                                     <Border.Width>
                                         <MultiBinding Converter="{StaticResource DockMorphEngine}" ConverterParameter="OuterW">
                                             <Binding Path="DataContext.Settings.Thickness" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
-                                            <Binding Path="DataContext.Settings.IconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
+                                            <Binding Path="DataContext.Settings.EffectiveIconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                             <Binding Path="DataContext.Settings.UIPosition" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                             <Binding Path="(local:DockPhysics.MorphProgress)" RelativeSource="{RelativeSource TemplatedParent}"/>
                                         </MultiBinding>
@@ -86,7 +89,7 @@
                                     <Border.Height>
                                         <MultiBinding Converter="{StaticResource DockMorphEngine}" ConverterParameter="OuterH">
                                             <Binding Path="DataContext.Settings.Thickness" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
-                                            <Binding Path="DataContext.Settings.IconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
+                                            <Binding Path="DataContext.Settings.EffectiveIconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                             <Binding Path="DataContext.Settings.UIPosition" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                             <Binding Path="(local:DockPhysics.MorphProgress)" RelativeSource="{RelativeSource TemplatedParent}"/>
                                         </MultiBinding>
@@ -105,7 +108,7 @@
                                 <ItemsControl.Opacity>
                                     <MultiBinding Converter="{StaticResource DockMorphEngine}" ConverterParameter="IndicatorOpacity">
                                         <Binding Path="DataContext.Settings.Thickness" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
-                                        <Binding Path="DataContext.Settings.IconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
+                                        <Binding Path="DataContext.Settings.EffectiveIconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                         <Binding Path="DataContext.Settings.UIPosition" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                         <Binding Path="(local:DockPhysics.MorphProgress)" RelativeSource="{RelativeSource TemplatedParent}"/>
                                     </MultiBinding>
@@ -113,7 +116,7 @@
                                 <ItemsControl.Margin>
                                     <MultiBinding Converter="{StaticResource DockMorphEngine}" ConverterParameter="IndicatorMargin">
                                         <Binding Path="DataContext.Settings.Thickness" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
-                                        <Binding Path="DataContext.Settings.IconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
+                                        <Binding Path="DataContext.Settings.EffectiveIconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                         <Binding Path="DataContext.Settings.UIPosition" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                         <Binding Path="(local:DockPhysics.MorphProgress)" RelativeSource="{RelativeSource TemplatedParent}"/>
                                     </MultiBinding>
@@ -170,12 +173,12 @@
                             </ItemsControl>
 
                             <Grid x:Name="IconGrid" ClipToBounds="False" RenderTransformOrigin="0.5,0.5"
-                                  Width="{Binding DataContext.Settings.IconSize, RelativeSource={RelativeSource AncestorType={x:Type local:DockItemsControl}}}"
-                                  Height="{Binding DataContext.Settings.IconSize, RelativeSource={RelativeSource AncestorType={x:Type local:DockItemsControl}}}">
+                                  Width="{Binding DataContext.Settings.EffectiveIconSize, RelativeSource={RelativeSource AncestorType={x:Type local:DockItemsControl}}}"
+                                  Height="{Binding DataContext.Settings.EffectiveIconSize, RelativeSource={RelativeSource AncestorType={x:Type local:DockItemsControl}}}">
                                 <Grid.Margin>
                                     <MultiBinding Converter="{StaticResource DockMorphEngine}" ConverterParameter="IconMargin">
                                         <Binding Path="DataContext.Settings.Thickness" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
-                                        <Binding Path="DataContext.Settings.IconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
+                                        <Binding Path="DataContext.Settings.EffectiveIconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                         <Binding Path="DataContext.Settings.UIPosition" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                         <Binding Path="(local:DockPhysics.MorphProgress)" RelativeSource="{RelativeSource TemplatedParent}"/>
                                     </MultiBinding>
@@ -188,7 +191,7 @@
                                     <Rectangle.Margin>
                                         <MultiBinding Converter="{StaticResource DockMorphEngine}" ConverterParameter="ReflectMargin">
                                             <Binding Path="DataContext.Settings.Thickness" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
-                                            <Binding Path="DataContext.Settings.IconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
+                                            <Binding Path="DataContext.Settings.EffectiveIconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                             <Binding Path="DataContext.Settings.UIPosition" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                             <Binding Path="(local:DockPhysics.MorphProgress)" RelativeSource="{RelativeSource TemplatedParent}"/>
                                         </MultiBinding>
@@ -199,7 +202,7 @@
                                     <Rectangle.RenderTransform>
                                         <MultiBinding Converter="{StaticResource DockMorphEngine}" ConverterParameter="ReflectTransform">
                                             <Binding Path="DataContext.Settings.Thickness" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
-                                            <Binding Path="DataContext.Settings.IconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
+                                            <Binding Path="DataContext.Settings.EffectiveIconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                             <Binding Path="DataContext.Settings.UIPosition" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                             <Binding Path="(local:DockPhysics.MorphProgress)" RelativeSource="{RelativeSource TemplatedParent}"/>
                                         </MultiBinding>
@@ -207,7 +210,7 @@
                                     <Rectangle.OpacityMask>
                                         <MultiBinding Converter="{StaticResource DockMorphEngine}" ConverterParameter="ReflectMask">
                                             <Binding Path="DataContext.Settings.Thickness" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
-                                            <Binding Path="DataContext.Settings.IconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
+                                            <Binding Path="DataContext.Settings.EffectiveIconSize" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                             <Binding Path="DataContext.Settings.UIPosition" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}"/>
                                             <Binding Path="(local:DockPhysics.MorphProgress)" RelativeSource="{RelativeSource TemplatedParent}"/>
                                         </MultiBinding>
@@ -416,21 +419,24 @@
     <Grid x:Name="ContentContainer" HorizontalAlignment="Left" VerticalAlignment="Top" ClipToBounds="False" 
           AllowDrop="True" Drop="OnPanelDrop" DragOver="OnPanelDragOver" DragLeave="OnPanelDragLeave">
 
-        <Grid Margin="40" Background="Transparent" ClipToBounds="False">
+        <Grid x:Name="ZoomMarginGrid" Margin="40" Background="Transparent" ClipToBounds="False">
 
             <Viewbox x:Name="MainViewbox" Stretch="Uniform" StretchDirection="DownOnly" ClipToBounds="False" HorizontalAlignment="Center" VerticalAlignment="Center">
 
-                <Grid x:Name="DockGeometryGrid" ClipToBounds="False">
+                <Grid x:Name="DockGeometryGrid" ClipToBounds="False" PreviewMouseWheel="OnAppsWheel">
 
                     <Border x:Name="MainBorder" BorderThickness="0" ClipToBounds="False" SnapsToDevicePixels="True" ContextMenuOpening="MainBorder_ContextMenuOpening">
                         <Border.Effect>
-                            <DropShadowEffect BlurRadius="25" ShadowDepth="0" Direction="0" Opacity="0.35" Color="Black" />
+                            <DropShadowEffect x:Name="PanelShadow" BlurRadius="16" ShadowDepth="0" Direction="0" Opacity="0.2" Color="Black" />
                         </Border.Effect>
 
                         <Border.Background>
-                            <MultiBinding Converter="{StaticResource HexToBrushConverter}">
+                            <MultiBinding Converter="{StaticResource WingGradientConverter}">
                                 <Binding Path="Settings.BackgroundColor" />
                                 <Binding Path="Settings.BackgroundOpacity" />
+                                <Binding Path="Settings.UIPosition" />
+                                <Binding Path="Settings.UseAccentShadow" />
+                                <Binding Path="Settings.AccentIntensity" />
                             </MultiBinding>
                         </Border.Background>
 
@@ -475,7 +481,13 @@
                             </Border>
                         </Border>
                     </Border>
-                    <local:DockItemsControl x:Name="AppsItemsControl" ItemsSource="{Binding Apps}" ClipToBounds="False">
+                    <Canvas x:Name="AppsScrollHost" ClipToBounds="False" IsManipulationEnabled="True" ManipulationDelta="OnAppsManipulation">
+                    <local:DockItemsControl x:Name="AppsItemsControl" ItemsSource="{Binding Apps}" ClipToBounds="False"
+                                            VerticalAlignment="Top" HorizontalAlignment="Left"
+                                            RenderTransformOrigin="0,0">
+                        <local:DockItemsControl.RenderTransform>
+                            <TranslateTransform x:Name="AppsScrollTransform"/>
+                        </local:DockItemsControl.RenderTransform>
                         <local:DockItemsControl.Style>
                             <Style TargetType="local:DockItemsControl">
                                 <Setter Property="ItemsPanel" Value="{StaticResource VerticalPanel}" />
@@ -492,13 +504,17 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Button x:Name="AppButton" Tag="{Binding}" Style="{StaticResource DockButtonStyle}" 
-                                        Click="OnAppButtonClick" ToolTip="{Binding Name}" ClipToBounds="False"
+                                        Click="OnAppButtonClick" PreviewMouseWheel="OnAppButtonWheel" MouseEnter="OnAppButtonMouseEnter" MouseLeave="OnAppButtonMouseLeave" ClipToBounds="False"
+                                        ContextMenuOpening="OnAppButtonContextMenuOpening"
                                         AllowDrop="True" PreviewMouseLeftButtonDown="OnIconMouseLeftButtonDown"
                                         PreviewMouseMove="OnIconMouseMove" GiveFeedback="OnIconGiveFeedback"
-                                        DragOver="OnIconDragOver" Drop="OnIconDrop" 
+                                        DragOver="OnIconDragOver" Drop="OnIconDrop" DragEnter="OnIconDragEnter" DragLeave="OnIconDragLeave" 
                                         PreviewMouseUp="OnIconMouseUp" 
                                         HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
 
+                                    <Button.ToolTip>
+                                        <ToolTip Content="{Binding Name}"/>
+                                    </Button.ToolTip>
                                     <Button.ContextMenu>
                                         <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
                                                      Opened="ContextMenu_Opened" Closed="ContextMenu_Closed">
@@ -506,10 +522,15 @@
                                             <MenuItem Header="{Binding Name}" IsEnabled="False" FontWeight="Bold" />
                                             <Separator />
 
-                                            <MenuItem Header="Новое окно" Click="OnLaunchNewInstanceClick" Icon="&#xE8A7;"/>
+                                            <MenuItem Header="{DynamicResource L_m_newWindow}" Click="OnLaunchNewInstanceClick" Icon="&#xE8A7;"/>
+                                            <MenuItem Header="{DynamicResource L_m_runAdmin}" Click="OnRunAsAdminClick" Icon="&#xE7EF;"
+                                                      Visibility="{Binding RunAsAdminVisibility}"/>
+                                            <MenuItem Header="{DynamicResource L_m_addFolderFav}" Tag="AddFolderFav" Click="OnAddExplorerFolderToFavClick" Icon="&#xE734;"
+                                                      Visibility="Collapsed"/>
+                                            <MenuItem Header="{DynamicResource L_m_recent}" Tag="Recent" Icon="&#xE81C;" Visibility="Collapsed"/>
                                             <Separator />
 
-                                            <MenuItem Header="Закрепить на панели" Click="OnPinAppClick" Icon="&#xE718;">
+                                            <MenuItem Header="{DynamicResource L_m_pin}" Click="OnPinAppClick" Icon="&#xE718;">
                                                 <MenuItem.Style>
                                                     <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
                                                         <Setter Property="Visibility" Value="Collapsed"/>
@@ -522,7 +543,7 @@
                                                 </MenuItem.Style>
                                             </MenuItem>
 
-                                            <MenuItem Header="Открепить от панели" Click="OnUnpinAppClick" Icon="&#xE77A;">
+                                            <MenuItem Header="{DynamicResource L_m_unpin}" Click="OnUnpinAppClick" Icon="&#xE77A;">
                                                 <MenuItem.Style>
                                                     <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
                                                         <Setter Property="Visibility" Value="Collapsed"/>
@@ -535,7 +556,7 @@
                                                 </MenuItem.Style>
                                             </MenuItem>
 
-                                            <MenuItem Header="Закрыть" Click="OnCloseAppClick" Icon="&#xE8BB;">
+                                            <MenuItem Header="{DynamicResource L_m_minimizeAll}" Click="OnMinimizeWindowsClick" Icon="&#xE921;">
                                                 <MenuItem.Style>
                                                     <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
                                                         <Setter Property="Visibility" Value="Collapsed"/>
@@ -548,8 +569,23 @@
                                                 </MenuItem.Style>
                                             </MenuItem>
 
+                                            <MenuItem Header="{DynamicResource L_m_close}" Click="OnCloseAppClick" Icon="&#xE8BB;">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+
+                                            <MenuItem Header="{DynamicResource L_m_closeAll}" Click="OnCloseAllWindowsClick" Icon="&#xE8BB;" Visibility="{Binding MultipleWindowsVisibility}"/>
+
                                             <Separator />
-                                            <MenuItem Header="Не показывать в доке" Click="OnHideAppClick" Foreground="#D32F2F" ToolTip="Скрыть программу с панели" Icon="&#xED1A;"/>
+                                            <MenuItem Header="{DynamicResource L_m_hide}" Click="OnHideAppClick" Foreground="#D32F2F" ToolTip="{DynamicResource L_m_hideTip}" Icon="&#xED1A;"/>
 
                                         </ContextMenu>
                                     </Button.ContextMenu>
@@ -562,7 +598,34 @@
                                             <Binding Path="DataContext.Settings.UIPosition" RelativeSource="{RelativeSource AncestorType={x:Type local:DockItemsControl}}" />
                                         </MultiBinding>
                                     </Button.Margin>
-                                    <Image Source="{Binding ActiveIconTrigger, Converter={StaticResource AppIconConverter}}" RenderOptions.BitmapScalingMode="HighQuality" Margin="2" ClipToBounds="False"/>
+                                    <Grid>
+                                        <Image Source="{Binding ActiveIconTrigger, Converter={StaticResource AppIconConverter}}" RenderOptions.BitmapScalingMode="HighQuality" Margin="2" ClipToBounds="False" Opacity="{Binding AppearOpacity}">
+                                            <Image.Style>
+                                                <Style TargetType="Image">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsFavorites}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Image.Style>
+                                        </Image>
+                                        <Path Data="M 12,2 L 14.9,8.6 L 22,9.2 L 16.7,14 L 18.3,21 L 12,17.3 L 5.7,21 L 7.3,14 L 2,9.2 L 9.1,8.6 Z" Fill="#FFD54A" Stroke="#B8860B" StrokeThickness="0.6" Stretch="Uniform" Margin="6" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <Path.Effect>
+                                                <DropShadowEffect BlurRadius="5" ShadowDepth="1.5" Direction="270" Opacity="0.55" Color="Black"/>
+                                            </Path.Effect>
+                                            <Path.Style>
+                                                <Style TargetType="Path">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsFavorites}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Path.Style>
+                                        </Path>
+                                    </Grid>
                                 </Button>
                                 <DataTemplate.Triggers>
                                     <DataTrigger Binding="{Binding IsPlaceholder}" Value="True">
@@ -573,6 +636,10 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </local:DockItemsControl>
+                    </Canvas>
+
+                    <Path x:Name="ChevronStart" Data="M 0,7 L 8,0 L 16,7" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,3,0,0" Opacity="0.6" Visibility="Collapsed" IsHitTestVisible="False"/>
+                    <Path x:Name="ChevronEnd" Data="M 0,0 L 8,7 L 16,0" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,3" Opacity="0.6" Visibility="Collapsed" IsHitTestVisible="False"/>
 
                 </Grid>
             </Viewbox>

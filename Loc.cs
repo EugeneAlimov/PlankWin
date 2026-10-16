@@ -1,0 +1,185 @@
+﻿using System.ComponentModel;
+using System.Globalization;
+using System.Windows;
+using System.Windows.Data;
+
+namespace PlankWin
+{
+    // Локализация: ru / en / uk / de. Строки XAML берутся через {DynamicResource L_ключ}
+    // (переключение на лету), строки кода — через Loc.T("ключ"), значения enum — через EnumLocConverter.
+    public static class Loc
+    {
+        public static readonly string[] Codes = { "ru", "en", "uk", "de" };
+        public static readonly string[] NativeNames = { "Русский", "English", "Українська", "Deutsch" };
+
+        public static string Lang { get; private set; } = "en";
+        private static int Idx => System.Array.IndexOf(Codes, Lang) is int i && i >= 0 ? i : 1;
+
+        public static event System.Action? Changed;
+
+        // Счётчик смены языка: привязки к (local:Loc.Version) пересчитываются при переключении.
+        public static int Version { get; private set; }
+        public static event System.EventHandler<PropertyChangedEventArgs>? StaticPropertyChanged;
+
+        // setting: "auto" или код языка. Авто: язык интерфейса Windows, если поддержан, иначе английский.
+        public static void Apply(string? setting)
+        {
+            string code = string.IsNullOrEmpty(setting) || setting == "auto"
+                ? CultureInfo.CurrentUICulture.TwoLetterISOLanguageName
+                : setting;
+            Lang = System.Array.IndexOf(Codes, code) >= 0 ? code : "en";
+
+            var res = Application.Current?.Resources;
+            if (res != null)
+                foreach (var kv in S) res["L_" + kv.Key] = kv.Value[Idx];
+            Version++;
+            StaticPropertyChanged?.Invoke(null, new PropertyChangedEventArgs(nameof(Version)));
+            Changed?.Invoke();
+        }
+
+        public static string T(string key) => S.TryGetValue(key, out var v) ? v[Idx] : key;
+
+        private static readonly System.Collections.Generic.Dictionary<string, string[]> S = new()
+        {
+            ["set_title"] = new[] { "Настройки PlankWin", "PlankWin Settings", "Налаштування PlankWin", "PlankWin-Einstellungen" },
+            ["tab_behavior"] = new[] { "Поведение и Положение", "Behavior & Position", "Поведінка й положення", "Verhalten & Position" },
+            ["cfg_export"] = new[] { "Экспорт настроек…", "Export settings…", "Експорт налаштувань…", "Einstellungen exportieren…" },
+            ["cfg_import"] = new[] { "Импорт настроек…", "Import settings…", "Імпорт налаштувань…", "Einstellungen importieren…" },
+            ["cfg_export_done"] = new[] { "Настройки сохранены.", "Settings exported.", "Налаштування збережено.", "Einstellungen exportiert." },
+            ["cfg_bad_file"] = new[] { "Это не файл настроек PlankWin.", "This is not a PlankWin settings file.", "Це не файл налаштувань PlankWin.", "Dies ist keine PlankWin-Einstellungsdatei." },
+            ["cfg_import_confirm"] = new[] {
+                "Текущие настройки, кнопки и избранное будут заменены (резервная копия сохранится рядом с конфигом). PlankWin перезапустится. Продолжить?",
+                "Current settings, buttons and favorites will be replaced (a backup is kept next to the config). PlankWin will restart. Continue?",
+                "Поточні налаштування, кнопки та обране буде замінено (резервна копія збережеться поруч із конфігом). PlankWin перезапуститься. Продовжити?",
+                "Aktuelle Einstellungen, Schaltflächen und Favoriten werden ersetzt (eine Sicherung bleibt neben der Konfiguration). PlankWin wird neu gestartet. Fortfahren?" },
+            ["sec_main"] = new[] { "Главные настройки", "General", "Головні налаштування", "Allgemein" },
+            ["language"] = new[] { "Язык:", "Language:", "Мова:", "Sprache:" },
+            ["lang_auto"] = new[] { "Авто (как в Windows)", "Auto (as in Windows)", "Авто (як у Windows)", "Automatisch (wie Windows)" },
+            ["runAtStartup"] = new[] { "Запускать вместе с Windows", "Start with Windows", "Запускати разом з Windows", "Mit Windows starten" },
+            ["dockMode"] = new[] { "Режим панели:", "Dock mode:", "Режим панелі:", "Dock-Modus:" },
+            ["mode_always"] = new[] { "Всегда видима", "Always visible", "Завжди видима", "Immer sichtbar" },
+            ["mode_auto"] = new[] { "Автоскрытие", "Auto-hide", "Автоприховування", "Automatisch ausblenden" },
+            ["mode_smart"] = new[] { "Умное скрытие", "Smart hide", "Розумне приховування", "Intelligent ausblenden" },
+            ["reserve"] = new[] { "Резервировать место на экране", "Reserve screen space", "Резервувати місце на екрані", "Bildschirmplatz reservieren" },
+            ["reserve_hint"] = new[] { "Ограничение Windows: при изменении зарезервированной области Проводник может переставить ярлыки рабочего стола, в том числе между мониторами. Так же ведёт себя панель задач Windows.", "Windows limitation: when the reserved area changes, Explorer may rearrange desktop icons, including across monitors. The Windows taskbar behaves the same way.", "Обмеження Windows: під час зміни зарезервованої області Провідник може переставити ярлики робочого столу, зокрема між моніторами. Так само поводиться панель завдань Windows.", "Windows-Einschränkung: Ändert sich der reservierte Bereich, kann der Explorer Desktopsymbole neu anordnen – auch zwischen Monitoren. Die Windows-Taskleiste verhält sich genauso." },
+            ["sec_timings"] = new[] { "Тайминги автоскрытия", "Auto-hide timing", "Таймінги автоприховування", "Timing für Ausblenden" },
+            ["showDelay"] = new[] { "Задержка появления (мс):", "Show delay (ms):", "Затримка появи (мс):", "Einblendverzögerung (ms):" },
+            ["hideDelay"] = new[] { "Задержка скрытия (мс):", "Hide delay (ms):", "Затримка приховування (мс):", "Ausblendverzögerung (ms):" },
+            ["sec_geometry"] = new[] { "Геометрия", "Geometry", "Геометрія", "Geometrie" },
+            ["floating"] = new[] { "Летающая панель (отступ от края)", "Floating dock (edge margin)", "Плаваюча панель (відступ від краю)", "Schwebendes Dock (Randabstand)" },
+            ["adaptive"] = new[] { "Адаптивный размер (стягивание)", "Adaptive size (shrink to fit)", "Адаптивний розмір (стягування)", "Adaptive Größe (an Inhalt anpassen)" },
+            ["position"] = new[] { "Расположение панели:", "Dock position:", "Розташування панелі:", "Dock-Position:" },
+            ["alignment"] = new[] { "Выравнивание значков:", "Icon alignment:", "Вирівнювання значків:", "Symbolausrichtung:" },
+            ["tab_preview"] = new[] { "Превью и Аэро", "Previews & Aero", "Превʼю та Аеро", "Vorschau & Aero" },
+            ["sec_previews"] = new[] { "Превью окон", "Window previews", "Превʼю вікон", "Fenstervorschau" },
+            ["showPreviews"] = new[] { "Показывать превью окон при наведении", "Show window previews on hover", "Показувати превʼю вікон під час наведення", "Fenstervorschau beim Überfahren anzeigen" },
+            ["previewDelay"] = new[] { "Задержка превью (мс):", "Preview delay (ms):", "Затримка превʼю (мс):", "Vorschauverzögerung (ms):" },
+            ["previewOrient"] = new[] { "Ориентация превью:", "Preview orientation:", "Орієнтація превʼю:", "Vorschau-Ausrichtung:" },
+            ["orient_auto"] = new[] { "Авто (по стороне панели)", "Auto (by dock side)", "Авто (за стороною панелі)", "Automatisch (nach Dock-Seite)" },
+            ["orient_h"] = new[] { "Горизонтальное", "Horizontal", "Горизонтальна", "Horizontal" },
+            ["orient_v"] = new[] { "Вертикальное", "Vertical", "Вертикальна", "Vertikal" },
+            ["sec_aero"] = new[] { "Матовый слой (Аэро)", "Frosted layer (Aero)", "Матовий шар (Аеро)", "Milchglas-Ebene (Aero)" },
+            ["dim"] = new[] { "Затемнение:", "Dimming:", "Затемнення:", "Abdunkeln:" },
+            ["blur"] = new[] { "Размытие:", "Blur:", "Розмиття:", "Unschärfe:" },
+            ["duration"] = new[] { "Длительность (мс):", "Duration (ms):", "Тривалість (мс):", "Dauer (ms):" },
+            ["easing"] = new[] { "Кривая анимации:", "Animation curve:", "Крива анімації:", "Animationskurve:" },
+            ["ease_linear"] = new[] { "Линейно", "Linear", "Лінійно", "Linear" },
+            ["ease_in"] = new[] { "EaseIn (разгон)", "EaseIn (accelerate)", "EaseIn (розгін)", "EaseIn (beschleunigen)" },
+            ["ease_out"] = new[] { "EaseOut (торможение)", "EaseOut (decelerate)", "EaseOut (гальмування)", "EaseOut (abbremsen)" },
+            ["ease_inout"] = new[] { "EaseInOut (плавно)", "EaseInOut (smooth)", "EaseInOut (плавно)", "EaseInOut (sanft)" },
+            ["ease_sine"] = new[] { "Синусоида", "Sine", "Синусоїда", "Sinus" },
+            ["tint"] = new[] { "Оттенок слоя (RGB):", "Layer tint (RGB):", "Відтінок шару (RGB):", "Ebenenfarbton (RGB):" },
+            ["tab_fav"] = new[] { "Избранное", "Favorites", "Обране", "Favoriten" },
+            ["sec_fav"] = new[] { "Избранное (папки)", "Favorites (folders)", "Обране (теки)", "Favoriten (Ordner)" },
+            ["favEnable"] = new[] { "Включить избранное", "Enable favorites", "Увімкнути обране", "Favoriten aktivieren" },
+            ["favLayout"] = new[] { "Раскладка избранного:", "Favorites layout:", "Розкладка обраного:", "Favoriten-Layout:" },
+            ["layout_list"] = new[] { "Список", "List", "Список", "Liste" },
+            ["layout_grid"] = new[] { "Сетка плиток", "Tile grid", "Сітка плиток", "Kachelraster" },
+            ["favOpen"] = new[] { "Открытие избранного:", "Open favorites:", "Відкриття обраного:", "Favoriten öffnen:" },
+            ["open_click"] = new[] { "По клику", "On click", "Клацанням", "Per Klick" },
+            ["open_hover"] = new[] { "По наведению", "On hover", "Наведенням", "Beim Überfahren" },
+            ["tab_style"] = new[] { "Стиль и Оформление", "Style & Appearance", "Стиль і оформлення", "Stil & Aussehen" },
+            ["sec_sizes"] = new[] { "Размеры (пиксели)", "Sizes (pixels)", "Розміри (пікселі)", "Größen (Pixel)" },
+            ["thickness"] = new[] { "Толщина панели:", "Dock thickness:", "Товщина панелі:", "Dock-Dicke:" },
+            ["iconSize"] = new[] { "Размер иконок:", "Icon size:", "Розмір іконок:", "Symbolgröße:" },
+            ["iconGap"] = new[] { "Зазор между иконками:", "Icon spacing:", "Проміжок між іконками:", "Symbolabstand:" },
+            ["edgeMargin"] = new[] { "Отступ от экрана:", "Screen margin:", "Відступ від екрана:", "Bildschirmabstand:" },
+            ["innerPad"] = new[] { "Внутренний зазор:", "Inner padding:", "Внутрішній проміжок:", "Innenabstand:" },
+            ["corner"] = new[] { "Скругление углов:", "Corner radius:", "Заокруглення кутів:", "Eckenradius:" },
+            ["sec_colors"] = new[] { "Цвета (HEX)", "Colors (HEX)", "Кольори (HEX)", "Farben (HEX)" },
+            ["bgColor"] = new[] { "Цвет фона (RGB):", "Background color (RGB):", "Колір тла (RGB):", "Hintergrundfarbe (RGB):" },
+            ["followWin"] = new[] { "Цвет как у Windows (авто)", "Match Windows color (auto)", "Колір як у Windows (авто)", "Windows-Farbe übernehmen (auto)" },
+            ["accentShadow"] = new[] { "Акцент Windows в тени панели", "Windows accent in dock shadow", "Акцент Windows у тіні панелі", "Windows-Akzent im Dock-Schatten" },
+            ["accentInt"] = new[] { "Интенсивность акцента:", "Accent intensity:", "Інтенсивність акценту:", "Akzentintensität:" },
+            ["opacity"] = new[] { "Прозрачность:", "Opacity:", "Прозорість:", "Deckkraft:" },
+            ["tab_excl"] = new[] { "Исключения", "Exclusions", "Винятки", "Ausnahmen" },
+            ["sec_filter"] = new[] { "Фильтр приложений", "App filter", "Фільтр застосунків", "App-Filter" },
+            ["filter_hint1"] = new[] { "Отметьте тумблером приложения, которые нужно скрыть с панели.", "Toggle the apps you want to hide from the dock.", "Позначте перемикачем застосунки, які треба приховати з панелі.", "Schalten Sie die Apps ein, die im Dock ausgeblendet werden sollen." },
+            ["filter_hint2"] = new[] { "(Здесь показаны уже скрытые программы, а также все запущенные сейчас)", "(Shows already hidden apps and everything currently running)", "(Тут показано вже приховані програми, а також усі запущені зараз)", "(Zeigt bereits ausgeblendete und alle laufenden Programme)" },
+            ["running"] = new[] { "Запущено", "Running", "Запущено", "Läuft" },
+            ["refreshList"] = new[] { "Обновить список запущенных окон", "Refresh running windows", "Оновити список запущених вікон", "Laufende Fenster aktualisieren" },
+            ["done"] = new[] { "Готово", "Done", "Готово", "Fertig" },
+            ["m_newWindow"] = new[] { "Новое окно", "New window", "Нове вікно", "Neues Fenster" },
+            ["m_recent"] = new[] { "Недавнее", "Recent", "Нещодавні", "Zuletzt verwendet" },
+            ["rc_tasks"] = new[] { "Задачи", "Tasks", "Завдання", "Aufgaben" },
+            ["rc_session"] = new[] { "сессия", "session", "сесія", "Sitzung" },
+            ["rc_open"] = new[] { "открыт", "open", "відкрито", "geöffnet" },
+            ["rc_missing"] = new[] { "Файл не найден", "File not found", "Файл не знайдено", "Datei nicht gefunden" },
+            ["rc_pin"] = new[] { "Закрепить в списке", "Pin to list", "Закріпити у списку", "An Liste anheften" },
+            ["rc_unpin"] = new[] { "Открепить", "Unpin from list", "Відкріпити", "Von Liste lösen" },
+            ["rc_folder"] = new[] { "Открыть расположение", "Open file location", "Відкрити розташування", "Dateispeicherort öffnen" },
+            ["m_runAdmin"] = new[] { "Запуск от имени администратора", "Run as administrator", "Запуск від імені адміністратора", "Als Administrator ausführen" },
+            ["m_addFolderFav"] = new[] { "Добавить папку в избранное", "Add folder to favorites", "Додати теку до обраного", "Ordner zu Favoriten hinzufügen" },
+            ["m_pin"] = new[] { "Закрепить на панели", "Pin to dock", "Закріпити на панелі", "An Dock anheften" },
+            ["m_unpin"] = new[] { "Открепить от панели", "Unpin from dock", "Відкріпити від панелі", "Vom Dock lösen" },
+            ["m_minimizeAll"] = new[] { "Свернуть окна", "Minimize windows", "Згорнути вікна", "Fenster minimieren" },
+            ["m_close"] = new[] { "Закрыть", "Close", "Закрити", "Schließen" },
+            ["m_closeAll"] = new[] { "Закрыть все окна", "Close all windows", "Закрити всі вікна", "Alle Fenster schließen" },
+            ["m_hide"] = new[] { "Не показывать в доке", "Don't show in dock", "Не показувати в доку", "Nicht im Dock anzeigen" },
+            ["m_hideTip"] = new[] { "Скрыть программу с панели", "Hide this app from the dock", "Приховати програму з панелі", "App aus dem Dock ausblenden" },
+            ["m_minimize"] = new[] { "Свернуть", "Minimize", "Згорнути", "Minimieren" },
+            ["m_restore"] = new[] { "Восстановить", "Restore", "Відновити", "Wiederherstellen" },
+            ["m_maximize"] = new[] { "Развернуть", "Maximize", "Розгорнути", "Maximieren" },
+            ["preview_minimized"] = new[] { "свёрнуто", "minimized", "згорнуто", "minimiert" },
+            ["fav_empty"] = new[] { "Нет папок. Перетащите папку на звезду.", "No folders. Drag a folder onto the star.", "Немає тек. Перетягніть теку на зірку.", "Keine Ordner. Ziehen Sie einen Ordner auf den Stern." },
+            ["fav_remove"] = new[] { "Убрать из избранного", "Remove from favorites", "Прибрати з обраного", "Aus Favoriten entfernen" },
+            ["fav_addFolder"] = new[] { "Добавить папку…", "Add folder…", "Додати теку…", "Ordner hinzufügen…" },
+            ["fav_dlgTitle"] = new[] { "Добавить в избранное", "Add to favorites", "Додати до обраного", "Zu Favoriten hinzufügen" },
+            ["tray_title"] = new[] { "⚙ PlankWin (Настройки: Ctrl+Shift+ПКМ)", "⚙ PlankWin (Settings: Ctrl+Shift+Right-click)", "⚙ PlankWin (Налаштування: Ctrl+Shift+ПКМ)", "⚙ PlankWin (Einstellungen: Strg+Umschalt+Rechtsklick)" },
+            ["tray_monitor"] = new[] { "Монитор", "Monitor", "Монітор", "Monitor" },
+            ["tray_primary"] = new[] { "основной", "primary", "основний", "Hauptmonitor" },
+            ["tray_off"] = new[] { "выкл.", "off", "вимк.", "aus" },
+            ["tray_panelHere"] = new[] { "Панель на этом мониторе", "Dock on this monitor", "Панель на цьому моніторі", "Dock auf diesem Monitor" },
+            ["tray_mode"] = new[] { "Режим панели", "Dock mode", "Режим панелі", "Dock-Modus" },
+            ["tray_forceHide"] = new[] { "Принудительно скрыть панель", "Force hide dock", "Примусово приховати панель", "Dock erzwungen ausblenden" },
+            ["tray_settings"] = new[] { "Настройки", "Settings", "Налаштування", "Einstellungen" },
+            ["tray_exit"] = new[] { "Выход", "Exit", "Вихід", "Beenden" },
+            ["err_launch"] = new[] { "Ошибка запуска:", "Launch error:", "Помилка запуску:", "Startfehler:" },
+            ["err_readApps"] = new[] { "Ошибка чтения конфигурации приложений:", "Error reading app configuration:", "Помилка читання конфігурації застосунків:", "Fehler beim Lesen der App-Konfiguration:" },
+            ["err_saveApps"] = new[] { "Ошибка сохранения apps:", "Error saving apps:", "Помилка збереження apps:", "Fehler beim Speichern der Apps:" },
+            ["DockPosition_Bottom"] = new[] { "Снизу", "Bottom", "Знизу", "Unten" },
+            ["DockPosition_Top"] = new[] { "Сверху", "Top", "Згори", "Oben" },
+            ["DockPosition_Left"] = new[] { "Слева", "Left", "Ліворуч", "Links" },
+            ["DockPosition_Right"] = new[] { "Справа", "Right", "Праворуч", "Rechts" },
+            ["DockAlignment_Center"] = new[] { "По центру", "Center", "По центру", "Zentriert" },
+            ["DockAlignment_Start"] = new[] { "В начале", "Start", "На початку", "Am Anfang" },
+            ["DockAlignment_End"] = new[] { "В конце", "End", "В кінці", "Am Ende" },
+        };
+    }
+
+    // Перевод значения enum: ключ "ИмяТипа_Значение". values[0] — значение, values[1] — Loc.Version (для обновления).
+    public class EnumLocConverter : IMultiValueConverter
+    {
+        public object Convert(object[] values, System.Type targetType, object parameter, CultureInfo culture)
+        {
+            var v = values.Length > 0 ? values[0] : null;
+            if (v == null) return string.Empty;
+            string key = v.GetType().Name + "_" + v;
+            string t = Loc.T(key);
+            return t == key ? v.ToString() ?? string.Empty : t;
+        }
+
+        public object[] ConvertBack(object value, System.Type[] targetTypes, object parameter, CultureInfo culture)
+            => throw new System.NotSupportedException();
+    }
+}

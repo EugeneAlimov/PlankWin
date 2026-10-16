@@ -4,7 +4,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="clr-namespace:PlankWin"
-    Title="Настройки PlankWin" 
+    Title="{DynamicResource L_set_title}" 
     
     Width="450" Height="580"
     MinWidth="450" MaxWidth="450"
@@ -25,7 +25,165 @@
 
     <Window.Resources>
         <local:HexToBrushConverter x:Key="HexToBrushConverter" />
-        <local:IsAlwaysVisibleConverter x:Key="IsAlwaysVisibleConverter" />
+        <local:EnumLocConverter x:Key="EnumLoc" />
+
+        <!-- ===== Вкладки в тон системной теме (Win11-стиль: текст + акцентная полоска) ===== -->
+        <Style TargetType="TabControl">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <!-- Вкладки-«чипы»: у каждой своя рамка и фон, ряды центрированы.
+                                 WrapPanel вместо TabPanel: строки вкладок не прыгают при выборе. -->
+                            <local:JustifiedWrapPanel IsItemsHost="True" Margin="2,0,2,0"/>
+                            <ContentPresenter Grid.Row="1" ContentSource="SelectedContent" Margin="4,10,4,0"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="TabItem">
+            <Setter Property="Foreground" Value="{DynamicResource MenuTextBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <!-- Неактивная: приглушённый фон + рамка; активная: фон окна + рамка акцента. -->
+                        <Border x:Name="Bd" Background="{DynamicResource MenuHoverBrush}" BorderBrush="{DynamicResource MenuBorderBrush}" BorderThickness="1"
+                                CornerRadius="{DynamicResource SysRadiusS}" Padding="10,5,10,5" Margin="2" Cursor="Hand">
+                            <ContentPresenter x:Name="Hdr" ContentSource="Header" HorizontalAlignment="Center" Opacity="0.65"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Hdr" Property="Opacity" Value="1"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource MenuTextBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource MenuBgBrush}"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                <Setter TargetName="Bd" Property="BorderThickness" Value="1.5"/>
+                                <Setter TargetName="Hdr" Property="Opacity" Value="1"/>
+                                <Setter TargetName="Hdr" Property="TextElement.FontWeight" Value="SemiBold"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ===== Кнопки в тон системной теме (вместо стандартной синей подсветки) ===== -->
+        <Style TargetType="Button">
+            <Setter Property="Foreground" Value="{DynamicResource MenuTextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource MenuHoverBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource MenuBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{DynamicResource SysRadiusS}" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource MenuBorderBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ===== Выпадающие списки в тон системной теме ===== -->
+        <Style x:Key="ComboToggle" TargetType="ToggleButton">
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd" Background="{DynamicResource MenuBgBrush}" BorderBrush="{DynamicResource MenuBorderBrush}" BorderThickness="1" CornerRadius="{DynamicResource SysRadiusS}">
+                            <Path x:Name="Arrow" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0"
+                                  Data="M 0 0 L 4 4 L 8 0" Stroke="{DynamicResource MenuTextBrush}" StrokeThickness="1.2" Opacity="0.7"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource MenuHoverBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                <Setter TargetName="Arrow" Property="Data" Value="M 0 4 L 4 0 L 8 4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Foreground" Value="{DynamicResource MenuTextBrush}"/>
+            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton Style="{StaticResource ComboToggle}"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"/>
+                            <ContentPresenter Margin="10,0,28,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"/>
+                            <Popup IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True"
+                                   Focusable="False" PopupAnimation="Fade">
+                                <Border Margin="0,2,0,0" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                        Background="{DynamicResource MenuBgBrush}" BorderBrush="{DynamicResource MenuBorderBrush}"
+                                        BorderThickness="1" CornerRadius="{DynamicResource SysRadiusS}" Padding="3">
+                                    <ScrollViewer SnapsToDevicePixels="True">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource MenuTextBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="{DynamicResource SysRadiusS}" Padding="8,5">
+                            <Grid>
+                                <Border x:Name="Mark" Width="3" Height="14" CornerRadius="1.5" Background="{DynamicResource AccentBrush}"
+                                        HorizontalAlignment="Left" Margin="-6,0,0,0" Visibility="Hidden"/>
+                                <ContentPresenter/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource MenuHoverBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Mark" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="0">
@@ -46,7 +204,7 @@
                     Click="BtnClose_Click">
                 <Button.Template>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bg" Background="Transparent" CornerRadius="4">
+                        <Border x:Name="Bg" Background="Transparent" CornerRadius="{DynamicResource SysRadiusS}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -70,40 +228,226 @@
 
             <TabControl Grid.Row="0" Margin="5" Background="Transparent" BorderBrush="{DynamicResource MenuBorderBrush}">
 
-                <TabItem Header="Поведение и Положение">
+                <TabItem Header="{DynamicResource L_tab_behavior}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="15">
-                        <TextBlock Text="Главные настройки" FontWeight="Bold" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,10"/>
-                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="Запускать вместе с Windows" IsChecked="{Binding RunAtStartup}" Margin="0,0,0,8"/>
+                        <TextBlock Text="{DynamicResource L_sec_main}" FontWeight="SemiBold" FontSize="13.5" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,10"/>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{DynamicResource L_language}" VerticalAlignment="Center" Margin="0,0,10,0" Foreground="{DynamicResource MenuTextBrush}"/>
+                            <ComboBox x:Name="CmbLanguage" Grid.Column="1" SelectionChanged="CmbLanguage_SelectionChanged"/>
+                        </Grid>
+                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="{DynamicResource L_runAtStartup}" IsChecked="{Binding RunAtStartup}" Margin="0,0,0,8"/>
+                        <!-- Перенос конфигурации: все панели, кнопки, избранное и настройки одним файлом. -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                            <Button Content="{DynamicResource L_cfg_export}" Click="BtnExportConfig_Click" Padding="12,5" Margin="0,0,8,0"/>
+                            <Button Content="{DynamicResource L_cfg_import}" Click="BtnImportConfig_Click" Padding="12,5"/>
+                        </StackPanel>
 
-                        <TextBlock Text="Режим панели:" Margin="0,0,0,5" Foreground="{DynamicResource MenuTextBrush}"/>
+                        <TextBlock Text="{DynamicResource L_dockMode}" Margin="0,0,0,5" Foreground="{DynamicResource MenuTextBrush}"/>
                         <ComboBox x:Name="CmbVisibilityMode"
                                   SelectedValuePath="Tag"
                                   SelectedValue="{Binding VisibilityMode}"
                                   Margin="0,0,0,8">
-                            <ComboBoxItem Content="Всегда видима" Tag="{x:Static local:DockVisibilityMode.AlwaysVisible}"/>
-                            <ComboBoxItem Content="Автоскрытие" Tag="{x:Static local:DockVisibilityMode.AutoHide}"/>
-                            <ComboBoxItem Content="Умное скрытие" Tag="{x:Static local:DockVisibilityMode.SmartHide}"/>
+                            <ComboBoxItem Content="{DynamicResource L_mode_always}" Tag="{x:Static local:DockVisibilityMode.AlwaysVisible}"/>
+                            <ComboBoxItem Content="{DynamicResource L_mode_auto}" Tag="{x:Static local:DockVisibilityMode.AutoHide}"/>
+                            <ComboBoxItem Content="{DynamicResource L_mode_smart}" Tag="{x:Static local:DockVisibilityMode.SmartHide}"/>
                         </ComboBox>
 
-                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="Резервировать место на экране" IsChecked="{Binding ReserveScreenSpace}" Margin="0,0,0,15"
-                                  IsEnabled="{Binding VisibilityMode, Converter={StaticResource IsAlwaysVisibleConverter}}"/>
+                        <CheckBox x:Name="ChkReserve" Content="{DynamicResource L_reserve}" IsChecked="{Binding ReserveScreenSpace}" Margin="0,0,0,4">
+                            <CheckBox.Style>
+                                <Style TargetType="CheckBox" BasedOn="{StaticResource ToggleSwitchStyle}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding VisibilityMode}" Value="{x:Static local:DockVisibilityMode.AlwaysVisible}">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </CheckBox.Style>
+                        </CheckBox>
+                        <!-- Ограничение Windows: при изменении рабочей области Проводник перекладывает ярлыки. -->
+                        <TextBlock Visibility="{Binding Visibility, ElementName=ChkReserve}" TextWrapping="Wrap" FontSize="11" Opacity="0.6"
+                                   Foreground="{DynamicResource MenuTextBrush}" Margin="50,0,0,15"
+                                   Text="{DynamicResource L_reserve_hint}"/>
 
-                        <TextBlock Text="Геометрия" FontWeight="Bold" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,10"/>
-                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="Летающая панель (отступ от края)" IsChecked="{Binding IsFloating}" Margin="0,0,0,8"/>
-                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="Адаптивный размер (стягивание)" IsChecked="{Binding IsAdaptive}" Margin="0,0,0,15"/>
+                        <TextBlock Text="{DynamicResource L_sec_timings}" FontWeight="SemiBold" FontSize="13.5" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,10"/>
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="190"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="40"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{DynamicResource L_showDelay}" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                            <Slider Grid.Column="1" Minimum="50" Maximum="800" Value="{Binding EdgeShowDelayMs}" IsSnapToTickEnabled="True" TickFrequency="10" VerticalAlignment="Center" Margin="10,0"/>
+                            <TextBlock Grid.Column="2" Text="{Binding EdgeShowDelayMs}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,15">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="190"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="40"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{DynamicResource L_hideDelay}" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                            <Slider Grid.Column="1" Minimum="50" Maximum="1000" Value="{Binding HideDelayMs}" IsSnapToTickEnabled="True" TickFrequency="10" VerticalAlignment="Center" Margin="10,0"/>
+                            <TextBlock Grid.Column="2" Text="{Binding HideDelayMs}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+                        </Grid>
 
-                        <TextBlock Text="Расположение панели:" Margin="0,0,0,5" Foreground="{DynamicResource MenuTextBrush}"/>
-                        <ComboBox x:Name="CmbPosition" SelectedItem="{Binding Position}" Margin="0,0,0,10"/>
+                        <TextBlock Text="{DynamicResource L_sec_geometry}" FontWeight="SemiBold" FontSize="13.5" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,10"/>
+                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="{DynamicResource L_floating}" IsChecked="{Binding IsFloating}" Margin="0,0,0,8"/>
+                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="{DynamicResource L_adaptive}" IsChecked="{Binding IsAdaptive}" Margin="0,0,0,15"/>
 
-                        <TextBlock Text="Выравнивание значков:" Margin="0,0,0,5" Foreground="{DynamicResource MenuTextBrush}"/>
-                        <ComboBox x:Name="CmbAlignment" SelectedItem="{Binding Alignment}" Margin="0,0,0,10"/>
+                        <TextBlock Text="{DynamicResource L_position}" Margin="0,0,0,5" Foreground="{DynamicResource MenuTextBrush}"/>
+                        <ComboBox x:Name="CmbPosition" SelectedItem="{Binding Position}" Margin="0,0,0,10">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock>
+                                        <TextBlock.Text>
+                                            <MultiBinding Converter="{StaticResource EnumLoc}">
+                                                <Binding/>
+                                                <Binding Path="(local:Loc.Version)"/>
+                                            </MultiBinding>
+                                        </TextBlock.Text>
+                                    </TextBlock>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+
+                        <TextBlock Text="{DynamicResource L_alignment}" Margin="0,0,0,5" Foreground="{DynamicResource MenuTextBrush}"/>
+                        <ComboBox x:Name="CmbAlignment" SelectedItem="{Binding Alignment}" Margin="0,0,0,10">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock>
+                                        <TextBlock.Text>
+                                            <MultiBinding Converter="{StaticResource EnumLoc}">
+                                                <Binding/>
+                                                <Binding Path="(local:Loc.Version)"/>
+                                            </MultiBinding>
+                                        </TextBlock.Text>
+                                    </TextBlock>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
                     </StackPanel>
+                    </ScrollViewer>
                 </TabItem>
 
-                <TabItem Header="Стиль и Оформление">
+                <TabItem Header="{DynamicResource L_tab_preview}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="15">
+                        <TextBlock Text="{DynamicResource L_sec_previews}" FontWeight="SemiBold" FontSize="13.5" Foreground="{DynamicResource MenuTextBrush}" Margin="0,10,0,10"/>
+                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="{DynamicResource L_showPreviews}" IsChecked="{Binding EnablePreviews}" Margin="0,0,0,10"/>
+                        <Grid Margin="0,0,0,15">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="190"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="40"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{DynamicResource L_previewDelay}" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                            <Slider Grid.Column="1" Minimum="100" Maximum="1500" Value="{Binding PreviewDelayMs}" IsSnapToTickEnabled="True" TickFrequency="50" VerticalAlignment="Center" Margin="10,0"/>
+                            <TextBlock Grid.Column="2" Text="{Binding PreviewDelayMs}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+                        </Grid>
+
+                        <TextBlock Text="{DynamicResource L_previewOrient}" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,4"/>
+                        <ComboBox SelectedValuePath="Tag" SelectedValue="{Binding PreviewOrientation}" Margin="0,0,0,15">
+                            <ComboBoxItem Content="{DynamicResource L_orient_auto}" Tag="{x:Static local:PreviewOrientationMode.Auto}"/>
+                            <ComboBoxItem Content="{DynamicResource L_orient_h}" Tag="{x:Static local:PreviewOrientationMode.Horizontal}"/>
+                            <ComboBoxItem Content="{DynamicResource L_orient_v}" Tag="{x:Static local:PreviewOrientationMode.Vertical}"/>
+                        </ComboBox>
+
+                        <TextBlock Text="{DynamicResource L_sec_aero}" FontWeight="SemiBold" FontSize="13.5" Foreground="{DynamicResource MenuTextBrush}" Margin="0,10,0,10"/>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="190"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="45"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{DynamicResource L_dim}" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                            <Slider Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding PeekDim}" IsSnapToTickEnabled="True" TickFrequency="0.05" VerticalAlignment="Center" Margin="10,0"/>
+                            <TextBlock Grid.Column="2" Text="{Binding PeekDim, StringFormat=P0}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="190"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="45"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{DynamicResource L_blur}" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                            <Slider Grid.Column="1" Minimum="0" Maximum="40" Value="{Binding PeekBlur}" IsSnapToTickEnabled="True" TickFrequency="1" VerticalAlignment="Center" Margin="10,0"/>
+                            <TextBlock Grid.Column="2" Text="{Binding PeekBlur}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="190"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="45"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{DynamicResource L_duration}" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                            <Slider Grid.Column="1" Minimum="60" Maximum="1500" Value="{Binding PeekFadeMs}" IsSnapToTickEnabled="True" TickFrequency="10" VerticalAlignment="Center" Margin="10,0"/>
+                            <TextBlock Grid.Column="2" Text="{Binding PeekFadeMs}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+                        </Grid>
+                        <TextBlock Text="{DynamicResource L_easing}" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,4"/>
+                        <ComboBox SelectedValuePath="Tag" SelectedValue="{Binding PeekEasing}" Margin="0,0,0,10">
+                            <ComboBoxItem Content="{DynamicResource L_ease_linear}" Tag="{x:Static local:PeekEasingMode.Linear}"/>
+                            <ComboBoxItem Content="{DynamicResource L_ease_in}" Tag="{x:Static local:PeekEasingMode.EaseIn}"/>
+                            <ComboBoxItem Content="{DynamicResource L_ease_out}" Tag="{x:Static local:PeekEasingMode.EaseOut}"/>
+                            <ComboBoxItem Content="{DynamicResource L_ease_inout}" Tag="{x:Static local:PeekEasingMode.EaseInOut}"/>
+                            <ComboBoxItem Content="{DynamicResource L_ease_sine}" Tag="{x:Static local:PeekEasingMode.Sine}"/>
+                        </ComboBox>
+                        <TextBlock Text="{DynamicResource L_tint}" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,4"/>
+                        <Border x:Name="TintPreview" Height="16" CornerRadius="3" Margin="0,0,0,6" BorderBrush="#555555" BorderThickness="1"/>
+                        <Grid Margin="0,0,0,15">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="20"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="40"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition/>
+                                <RowDefinition/>
+                                <RowDefinition/>
+                            </Grid.RowDefinitions>
+                                <TextBlock Text="R" Foreground="#E53935" FontWeight="Bold" VerticalAlignment="Center" Grid.Row="0"/>
+                                <Slider x:Name="TintSliderR" Grid.Column="1" Grid.Row="0" Minimum="0" Maximum="255" ValueChanged="TintRGB_ValueChanged" IsSnapToTickEnabled="True" TickFrequency="1" Margin="5,2"/>
+                                <TextBlock Text="{Binding Value, ElementName=TintSliderR}" Grid.Column="2" Grid.Row="0" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+                                <TextBlock Text="G" Foreground="#43A047" FontWeight="Bold" VerticalAlignment="Center" Grid.Row="1"/>
+                                <Slider x:Name="TintSliderG" Grid.Column="1" Grid.Row="1" Minimum="0" Maximum="255" ValueChanged="TintRGB_ValueChanged" IsSnapToTickEnabled="True" TickFrequency="1" Margin="5,2"/>
+                                <TextBlock Text="{Binding Value, ElementName=TintSliderG}" Grid.Column="2" Grid.Row="1" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+                                <TextBlock Text="B" Foreground="#1E88E5" FontWeight="Bold" VerticalAlignment="Center" Grid.Row="2"/>
+                                <Slider x:Name="TintSliderB" Grid.Column="1" Grid.Row="2" Minimum="0" Maximum="255" ValueChanged="TintRGB_ValueChanged" IsSnapToTickEnabled="True" TickFrequency="1" Margin="5,2"/>
+                                <TextBlock Text="{Binding Value, ElementName=TintSliderB}" Grid.Column="2" Grid.Row="2" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+                        </Grid>
+                    </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <TabItem Header="{DynamicResource L_tab_fav}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="15">
+                        <TextBlock Text="{DynamicResource L_sec_fav}" FontWeight="SemiBold" FontSize="13.5" Foreground="{DynamicResource MenuTextBrush}" Margin="0,10,0,10"/>
+                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="{DynamicResource L_favEnable}" IsChecked="{Binding EnableFavorites}" Margin="0,0,0,10"/>
+                        <TextBlock Text="{DynamicResource L_favLayout}" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,4"/>
+                        <ComboBox SelectedValuePath="Tag" SelectedValue="{Binding FavoritesLayout}" Margin="0,0,0,15">
+                            <ComboBoxItem Content="{DynamicResource L_layout_list}" Tag="{x:Static local:FavoritesLayoutMode.List}"/>
+                            <ComboBoxItem Content="{DynamicResource L_layout_grid}" Tag="{x:Static local:FavoritesLayoutMode.Grid}"/>
+                        </ComboBox>
+                        <TextBlock Text="{DynamicResource L_favOpen}" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,4"/>
+                        <ComboBox SelectedValuePath="Tag" SelectedValue="{Binding FavoritesOpenMode}" Margin="0,0,0,15">
+                            <ComboBoxItem Content="{DynamicResource L_open_click}" Tag="{x:Static local:FavoritesOpenMode.Click}"/>
+                            <ComboBoxItem Content="{DynamicResource L_open_hover}" Tag="{x:Static local:FavoritesOpenMode.Hover}"/>
+                        </ComboBox>
+                    </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+
+                <TabItem Header="{DynamicResource L_tab_style}">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel Margin="15">
-                            <TextBlock Text="Размеры (пиксели)" FontWeight="Bold" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,10"/>
+                            <TextBlock Text="{DynamicResource L_sec_sizes}" FontWeight="SemiBold" FontSize="13.5" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,10"/>
 
                             <Grid Margin="0,0,0,8">
                                 <Grid.ColumnDefinitions>
@@ -111,8 +455,8 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="30"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="Толщина панели:" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
-                                <Slider Grid.Column="1" Minimum="20" Maximum="128" Value="{Binding Thickness}" IsSnapToTickEnabled="True" TickFrequency="1" VerticalAlignment="Center" Margin="10,0"/>
+                                <TextBlock Text="{DynamicResource L_thickness}" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                                <Slider Grid.Column="1" Minimum="20" Maximum="256" Value="{Binding Thickness}" IsSnapToTickEnabled="True" TickFrequency="1" VerticalAlignment="Center" Margin="10,0"/>
                                 <TextBlock Grid.Column="2" Text="{Binding Thickness}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
                             </Grid>
 
@@ -122,7 +466,7 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="30"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="Размер иконок:" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                                <TextBlock Text="{DynamicResource L_iconSize}" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
                                 <Slider Grid.Column="1" Minimum="16" Maximum="128" Value="{Binding IconSize}" IsSnapToTickEnabled="True" TickFrequency="1" VerticalAlignment="Center" Margin="10,0"/>
                                 <TextBlock Grid.Column="2" Text="{Binding IconSize}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
                             </Grid>
@@ -133,7 +477,7 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="30"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="Зазор между иконками:" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                                <TextBlock Text="{DynamicResource L_iconGap}" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
                                 <Slider Grid.Column="1" Minimum="0" Maximum="40" Value="{Binding IconMargin}" IsSnapToTickEnabled="True" TickFrequency="1" VerticalAlignment="Center" Margin="10,0"/>
                                 <TextBlock Grid.Column="2" Text="{Binding IconMargin}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
                             </Grid>
@@ -144,7 +488,7 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="30"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="Отступ от экрана:" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                                <TextBlock Text="{DynamicResource L_edgeMargin}" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
                                 <Slider Grid.Column="1" Minimum="0" Maximum="50" Value="{Binding EdgeMargin}" IsSnapToTickEnabled="True" TickFrequency="1" VerticalAlignment="Center" Margin="10,0"/>
                                 <TextBlock Grid.Column="2" Text="{Binding EdgeMargin}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
                             </Grid>
@@ -155,7 +499,7 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="30"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="Внутренний зазор:" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                                <TextBlock Text="{DynamicResource L_innerPad}" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
                                 <Slider Grid.Column="1" Minimum="0" Maximum="40" Value="{Binding PanelPadding}" IsSnapToTickEnabled="True" TickFrequency="1" VerticalAlignment="Center" Margin="10,0"/>
                                 <TextBlock Grid.Column="2" Text="{Binding PanelPadding}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
                             </Grid>
@@ -166,19 +510,19 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="30"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="Скругление углов:" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                                <TextBlock Text="{DynamicResource L_corner}" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
                                 <Slider Grid.Column="1" Minimum="0" Maximum="64" Value="{Binding PanelCornerRadius}" IsSnapToTickEnabled="True" TickFrequency="1" VerticalAlignment="Center" Margin="10,0"/>
                                 <TextBlock Grid.Column="2" Text="{Binding PanelCornerRadius}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
                             </Grid>
 
-                            <TextBlock Text="Цвета (HEX)" FontWeight="Bold" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,10"/>
+                            <TextBlock Text="{DynamicResource L_sec_colors}" FontWeight="SemiBold" FontSize="13.5" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,10"/>
 
                             <Grid Margin="0,0,0,15">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="140"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="Цвет фона (RGB):" VerticalAlignment="Top" Margin="0,5,0,0" Foreground="{DynamicResource MenuTextBrush}"/>
+                                <TextBlock Text="{DynamicResource L_bgColor}" VerticalAlignment="Top" Margin="0,5,0,0" Foreground="{DynamicResource MenuTextBrush}"/>
 
                                 <StackPanel Grid.Column="1">
                                     <Border Height="25" CornerRadius="3" BorderBrush="{DynamicResource MenuBorderBrush}" BorderThickness="1" Margin="0,0,0,8">
@@ -217,13 +561,27 @@
                                 </StackPanel>
                             </Grid>
 
+                            <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="{DynamicResource L_followWin}" IsChecked="{Binding FollowWindowsColor}" Margin="0,0,0,10"/>
+                            <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="{DynamicResource L_accentShadow}" IsChecked="{Binding UseAccentShadow}" Margin="0,0,0,10"/>
+
+                            <Grid Margin="0,0,0,8" IsEnabled="{Binding UseAccentShadow}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="35"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{DynamicResource L_accentInt}" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                                <Slider Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding AccentIntensity, UpdateSourceTrigger=PropertyChanged}" TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center" Margin="10,0"/>
+                                <TextBlock Grid.Column="2" Text="{Binding AccentIntensity}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
+                            </Grid>
+
                             <Grid Margin="0,0,0,8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="140"/>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="35"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="Прозрачность:" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
+                                <TextBlock Text="{DynamicResource L_opacity}" VerticalAlignment="Center" Foreground="{DynamicResource MenuTextBrush}"/>
                                 <Slider Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding BackgroundOpacity, UpdateSourceTrigger=PropertyChanged}" TickFrequency="0.05" IsSnapToTickEnabled="True" VerticalAlignment="Center" Margin="10,0"/>
                                 <TextBlock Grid.Column="2" Text="{Binding BackgroundOpacity, StringFormat=N2}" VerticalAlignment="Center" TextAlignment="Right" Foreground="{DynamicResource MenuTextBrush}"/>
                             </Grid>
@@ -232,11 +590,11 @@
                     </ScrollViewer>
                 </TabItem>
 
-                <TabItem Header="Исключения">
+                <TabItem Header="{DynamicResource L_tab_excl}">
                     <StackPanel Margin="15">
-                        <TextBlock Text="Фильтр приложений" FontWeight="Bold" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,10"/>
-                        <TextBlock Text="Отметьте тумблером приложения, которые нужно скрыть с панели." Foreground="{DynamicResource MenuTextBrush}" Opacity="0.8" Margin="0,0,0,5"/>
-                        <TextBlock Text="(Здесь показаны уже скрытые программы, а также все запущенные сейчас)" Foreground="{DynamicResource MenuTextBrush}" Opacity="0.6" FontStyle="Italic" Margin="0,0,0,15" TextWrapping="Wrap"/>
+                        <TextBlock Text="{DynamicResource L_sec_filter}" FontWeight="SemiBold" FontSize="13.5" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,10"/>
+                        <TextBlock Text="{DynamicResource L_filter_hint1}" Foreground="{DynamicResource MenuTextBrush}" Opacity="0.8" Margin="0,0,0,5"/>
+                        <TextBlock Text="{DynamicResource L_filter_hint2}" Foreground="{DynamicResource MenuTextBrush}" Opacity="0.6" FontStyle="Italic" Margin="0,0,0,15" TextWrapping="Wrap"/>
 
                         <ListBox ItemsSource="{Binding FilterItems, ElementName=SettingsWin}" Height="280" Margin="0,0,0,15" 
                                  BorderBrush="{DynamicResource MenuBorderBrush}" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
@@ -275,21 +633,19 @@
                                                     </Style.Triggers>
                                                 </Style>
                                             </Border.Style>
-                                            <TextBlock Text="Запущено" FontSize="10" Foreground="#4CAF50" FontWeight="Bold"/>
+                                            <TextBlock Text="{DynamicResource L_running}" FontSize="10" Foreground="#4CAF50" FontWeight="Bold"/>
                                         </Border>
                                     </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
 
-                        <Button Content="Обновить список запущенных окон" Click="BtnRefreshFilter_Click" HorizontalAlignment="Right" Padding="15,5" 
-                                Background="{DynamicResource MenuBgBrush}" BorderBrush="{DynamicResource MenuBorderBrush}" Foreground="{DynamicResource MenuTextBrush}"/>
+                        <Button Content="{DynamicResource L_refreshList}" Click="BtnRefreshFilter_Click" HorizontalAlignment="Right" Padding="15,5"/>
                     </StackPanel>
                 </TabItem>
             </TabControl>
 
-            <Button Grid.Row="1" Content="Готово" Width="100" Height="30" Margin="0,0,5,5" HorizontalAlignment="Right" Click="BtnClose_Click"
-                    Background="{DynamicResource MenuBgBrush}" BorderBrush="{DynamicResource MenuBorderBrush}" Foreground="{DynamicResource MenuTextBrush}"/>
+            <Button Grid.Row="1" Content="{DynamicResource L_done}" Width="100" Height="30" Margin="0,0,5,5" HorizontalAlignment="Right" Click="BtnClose_Click"/>
         </Grid>
     </Grid>
 </Window>

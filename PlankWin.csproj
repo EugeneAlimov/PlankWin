@@ -17,11 +17,19 @@
 		<EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
 		<IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
 		<ApplicationManifest>app.manifest</ApplicationManifest>
+		<ApplicationIcon>icon.ico</ApplicationIcon>
+
+		<!-- Приложение только под Windows (net8.0-windows) -> platform-предупреждения не актуальны -->
+		<NoWarn>$(NoWarn);CA1416</NoWarn>
 	</PropertyGroup>
 
 	<ItemGroup>
 		<Using Remove="System.Windows.Forms" />
 		<Using Remove="System.Drawing" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="System.Management" Version="8.0.0" />
 	</ItemGroup>
 
 	<ItemGroup>

@@ -57,7 +57,9 @@ namespace PlankWin
             double iconOffset = iconStart + (iconEnd - iconStart) * m;
 
             // 5. ГАБАРИТЫ ЯЧЕЙКИ
-            double cellLength = outerLongIdeal;
+            double appearScale = 1.0;
+            if (values.Length >= 5 && values[4] is double aScale) appearScale = aScale;
+            double cellLength = outerLongIdeal * appearScale;
             double cellDepthMax = Math.Max(T, Math.Max(outerCross, iconOffset + S + Math.Max(4.0, 8.0 * k)));
 
             switch (param)
