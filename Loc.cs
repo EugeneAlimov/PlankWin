@@ -43,6 +43,21 @@ namespace PlankWin
         {
             ["set_title"] = new[] { "Настройки PlankWin", "PlankWin Settings", "Налаштування PlankWin", "PlankWin-Einstellungen" },
             ["tab_behavior"] = new[] { "Поведение и Положение", "Behavior & Position", "Поведінка й положення", "Verhalten & Position" },
+            ["inst_offer"] = new[] {
+                "Установить PlankWin на этот компьютер?\n\nПрограмма переедет в {0}, в меню Пуск появится ярлык, а удалить её можно будет через «Приложения» Windows. Текущий файл будет перенесён туда.\n\n«Нет» — работать из текущей папки (вопрос больше не появится, установить можно из меню в трее).",
+                "Install PlankWin on this computer?\n\nThe app will move to {0}, a Start menu shortcut will be added, and it can be removed via Windows “Apps”. The current file will be moved there.\n\n“No” — keep running from the current folder (you won't be asked again; install later from the tray menu).",
+                "Встановити PlankWin на цей комп'ютер?\n\nПрограма переїде до {0}, у меню Пуск з'явиться ярлик, а видалити її можна буде через «Програми» Windows. Поточний файл буде перенесено туди.\n\n«Ні» — працювати з поточної теки (питання більше не з'явиться, встановити можна з меню в треї).",
+                "PlankWin auf diesem Computer installieren?\n\nDie App wird nach {0} verschoben, ein Startmenü-Eintrag wird angelegt und sie lässt sich über „Apps“ in Windows entfernen. Die aktuelle Datei wird dorthin verschoben.\n\n„Nein“ — aus dem aktuellen Ordner weiter ausführen (keine erneute Nachfrage; Installation später über das Tray-Menü)." },
+            ["inst_failed"] = new[] { "Не удалось установить: {0}", "Installation failed: {0}", "Не вдалося встановити: {0}", "Installation fehlgeschlagen: {0}" },
+            ["inst_menu"] = new[] { "Установить PlankWin…", "Install PlankWin…", "Встановити PlankWin…", "PlankWin installieren…" },
+            ["uninst_menu"] = new[] { "Удалить PlankWin…", "Uninstall PlankWin…", "Видалити PlankWin…", "PlankWin deinstallieren…" },
+            ["uninst_confirm"] = new[] { "Удалить PlankWin с этого компьютера?", "Remove PlankWin from this computer?", "Видалити PlankWin з цього комп'ютера?", "PlankWin von diesem Computer entfernen?" },
+            ["uninst_data"] = new[] {
+                "Удалить также настройки, закреплённые кнопки и избранное?\n\n«Нет» — оставить их на случай повторной установки.",
+                "Also delete settings, pinned buttons and favorites?\n\n“No” — keep them in case you reinstall.",
+                "Видалити також налаштування, закріплені кнопки та обране?\n\n«Ні» — залишити їх на випадок повторного встановлення.",
+                "Auch Einstellungen, angeheftete Schaltflächen und Favoriten löschen?\n\n„Nein“ — für eine erneute Installation behalten." },
+            ["uninst_done"] = new[] { "PlankWin удалён.", "PlankWin has been removed.", "PlankWin видалено.", "PlankWin wurde entfernt." },
             ["badges"] = new[] { "Счётчики уведомлений на иконках", "Notification counters on icons", "Лічильники сповіщень на іконках", "Benachrichtigungszähler auf Symbolen" },
             ["badges_hint"] = new[] {
                 "Число берётся из заголовка окна: Telegram, Viber, WhatsApp и почта в браузере и т.п.",

@@ -14,6 +14,7 @@ namespace PlankWin
             public string Language { get; set; } = "auto"; // "auto" | ru | en | uk | de
             public bool CheckUpdates { get; set; } = true;   // автопроверка обновлений на GitHub
             public bool ShowBadges { get; set; } = true;     // счётчики из заголовков окон на иконках
+            public bool InstallPromptDismissed { get; set; } // «не устанавливать» — больше не предлагать
             public string Hotkeys { get; set; } = "altshift";   // модификаторы для <mod>+1…9 / 0: off | winalt | ctrlalt | winshift | altshift
         }
 
@@ -49,6 +50,12 @@ namespace PlankWin
         {
             get => string.IsNullOrEmpty(_data.Hotkeys) ? "altshift" : _data.Hotkeys;
             set { _data.Hotkeys = value; Save(); }
+        }
+
+        public static bool InstallPromptDismissed
+        {
+            get => _data.InstallPromptDismissed;
+            set { _data.InstallPromptDismissed = value; Save(); }
         }
 
         public static bool ShowBadges

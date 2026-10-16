@@ -27,6 +27,19 @@ namespace PlankWin
                 try { System.Diagnostics.Process.GetProcessById(oldPid).WaitForExit(8000); } catch { }
             }
             Updater.CleanupOld(); // хвост прошлого обновления (PlankWin.exe.old)
+
+            // Самоустановка: удалить исходный exe после переноса; удаление из «Приложений» — без панелей.
+            int ri = Array.IndexOf(e.Args, "--remove-old");
+            if (ri >= 0 && ri + 1 < e.Args.Length) SelfInstaller.RemoveOld(e.Args[ri + 1]);
+            if (Array.IndexOf(e.Args, "--uninstall") >= 0)
+            {
+                base.OnStartup(e);
+                Loc.Apply(GlobalConfig.Language);
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                SelfInstaller.Uninstall();
+                Shutdown(); // отменили — просто выходим
+                return;
+            }
             PlankWin.StartMenuAumids.Warmup(); // фоном: карта exe → AUMID для меню «Недавнее»
             // Win10: прямые углы у элементов «под систему» (меню, списки, вкладки, превью).
             if (!PlankWin.Win32Helper.IsWin11)
@@ -54,6 +67,11 @@ namespace PlankWin
                 ct.Tick += (s, a) => { ct.Stop(); throw new InvalidOperationException("Crash test (--crash-test)"); };
                 ct.Start();
             }
+
+            // Автозапуск/«Приложения» — на актуальный exe; переносной запуск — предложить установку.
+            SelfInstaller.FixAutostartPath();
+            SelfInstaller.RefreshRegistration();
+            Dispatcher.BeginInvoke(new Action(SelfInstaller.OfferIfNeeded), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
 
             // Была ошибка в прошлом сеансе — предложить отчёт (после того как панели поднялись).
             Dispatcher.BeginInvoke(new Action(CrashReporter.ShowPendingIfAny), System.Windows.Threading.DispatcherPriority.ApplicationIdle);

@@ -144,6 +144,12 @@ namespace PlankWin
                     Process.Start(new ProcessStartInfo(exe, $"--wait-pid {Environment.ProcessId}") { UseShellExecute = false });
             }
             catch { }
+            ShutdownForRestart();
+        }
+
+        // Закрыть все панели и завершить процесс (перезапуск, установка, удаление).
+        public static void ShutdownForRestart()
+        {
             foreach (var d in _trayDocks.ToList()) d._allowClose = true;
             Application.Current.Shutdown();
         }
@@ -543,6 +549,19 @@ namespace PlankWin
                 var checkItem = new System.Windows.Forms.ToolStripMenuItem(Loc.T("upd_check")) { Enabled = !Updater.Busy };
                 checkItem.Click += (s2, a2) => _ = Updater.ManualCheck();
                 menu.Items.Add(checkItem);
+                // Установка (переносной exe) / удаление (установленный).
+                if (SelfInstaller.IsInstalled)
+                {
+                    var un = new System.Windows.Forms.ToolStripMenuItem(Loc.T("uninst_menu"));
+                    un.Click += (s2, a2) => SelfInstaller.Uninstall();
+                    menu.Items.Add(un);
+                }
+                else if (!Updater.IsDevBuild)
+                {
+                    var inst = new System.Windows.Forms.ToolStripMenuItem(Loc.T("inst_menu"));
+                    inst.Click += (s2, a2) => SelfInstaller.Install();
+                    menu.Items.Add(inst);
+                }
                 var exitItem = new System.Windows.Forms.ToolStripMenuItem(Loc.T("tray_exit"));
                 exitItem.Click += (s2, a2) =>
                 {
