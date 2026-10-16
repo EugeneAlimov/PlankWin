@@ -16,7 +16,7 @@ namespace PlankWin
     //                  или когда в фокусе рабочий стол (для доступа к ярлыкам).
     public enum DockVisibilityMode { AlwaysVisible, AutoHide, SmartHide }
 
-    public enum PreviewOrientationMode { Auto, Horizontal, Vertical }
+    public enum PreviewOrientationMode { Auto, Horizontal, Vertical, Grid }
 
     public enum PeekEasingMode { Linear, EaseIn, EaseOut, EaseInOut, Sine }
 

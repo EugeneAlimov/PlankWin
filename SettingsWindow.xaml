@@ -373,6 +373,7 @@
                             <ComboBoxItem Content="{DynamicResource L_orient_auto}" Tag="{x:Static local:PreviewOrientationMode.Auto}"/>
                             <ComboBoxItem Content="{DynamicResource L_orient_h}" Tag="{x:Static local:PreviewOrientationMode.Horizontal}"/>
                             <ComboBoxItem Content="{DynamicResource L_orient_v}" Tag="{x:Static local:PreviewOrientationMode.Vertical}"/>
+                            <ComboBoxItem Content="{DynamicResource L_orient_grid}" Tag="{x:Static local:PreviewOrientationMode.Grid}"/>
                         </ComboBox>
 
                         <TextBlock Text="{DynamicResource L_sec_aero}" FontWeight="SemiBold" FontSize="13.5" Foreground="{DynamicResource MenuTextBrush}" Margin="0,10,0,10"/>

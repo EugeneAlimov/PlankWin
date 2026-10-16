@@ -137,6 +137,7 @@ namespace PlankWin
             ["previewOrient"] = new[] { "Ориентация превью:", "Preview orientation:", "Орієнтація превʼю:", "Vorschau-Ausrichtung:" },
             ["orient_auto"] = new[] { "Авто (по стороне панели)", "Auto (by dock side)", "Авто (за стороною панелі)", "Automatisch (nach Dock-Seite)" },
             ["orient_h"] = new[] { "Горизонтальное", "Horizontal", "Горизонтальна", "Horizontal" },
+            ["orient_grid"] = new[] { "Сетка (квадратом)", "Grid (square)", "Сітка (квадратом)", "Raster (quadratisch)" },
             ["orient_v"] = new[] { "Вертикальное", "Vertical", "Вертикальна", "Vertikal" },
             ["sec_aero"] = new[] { "Матовый слой (Аэро)", "Frosted layer (Aero)", "Матовий шар (Аеро)", "Milchglas-Ebene (Aero)" },
             ["dim"] = new[] { "Затемнение:", "Dimming:", "Затемнення:", "Abdunkeln:" },

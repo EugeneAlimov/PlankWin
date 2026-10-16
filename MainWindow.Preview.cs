@@ -289,6 +289,8 @@ namespace PlankWin
             try { appIcon = new AppIconConverter().Convert(_previewApp, typeof(ImageSource), null!, System.Globalization.CultureInfo.CurrentCulture) as ImageSource; } catch { }
 
             // Ориентация карточек: по настройке, либо авто (боковой док -> столбец, верх/низ -> ряд).
+            // Сетка — как авто по направлению, но линии короче: квадрат (9 окон -> 3×3, 4 -> 2×2).
+            bool squareGrid = Settings.PreviewOrientation == PreviewOrientationMode.Grid;
             bool vertical = Settings.PreviewOrientation switch
             {
                 PreviewOrientationMode.Horizontal => false,
@@ -311,6 +313,7 @@ namespace PlankWin
                 {
                     double avail = (vertical ? scr.WorkingArea.Height : scr.WorkingArea.Width) / dpiS - 16; // поля 8+8 как в ClampToMonitor
                     int maxPer = Math.Max(1, (int)Math.Floor((avail - 2 * Pad + Gap) / mainStep));
+                    if (squareGrid) maxPer = Math.Min(maxPer, (int)Math.Ceiling(Math.Sqrt(n)));
                     int linesNeeded = (int)Math.Ceiling(n / (double)maxPer);
                     perLine = (int)Math.Ceiling(n / (double)linesNeeded);
                 }
