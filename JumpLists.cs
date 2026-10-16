@@ -26,7 +26,8 @@ namespace PlankWin
         public bool CanHandle(DockAppConfig app)
         {
             var ids = AppIdCandidates(app).ToList();
-            return FindFile(ids, AutoDir, ".automaticDestinations-ms") != null || FindFile(ids, CustomDir, ".customDestinations-ms") != null;
+            bool ok = FindFile(ids, AutoDir, ".automaticDestinations-ms") != null || FindFile(ids, CustomDir, ".customDestinations-ms") != null;
+            return ok;
         }
 
         public List<RecentItem> Get(DockAppConfig app)
@@ -39,7 +40,8 @@ namespace PlankWin
             string? auto = FindFile(ids, AutoDir, ".automaticDestinations-ms");
             if (auto != null)
             {
-                var entries = Read(auto)
+                var all = Read(auto);
+                var entries = all
                     .Where(e => IsFileSystemPath(e.Path))
                     .OrderByDescending(e => e.Pinned)          // закреплённые в самой Windows — первыми
                     .ThenByDescending(e => e.Time);
@@ -194,7 +196,8 @@ namespace PlankWin
                 crc ^= b;
                 for (int i = 0; i < 8; i++) crc = (crc & 1) != 0 ? (crc >> 1) ^ 0x92C64265D32139A4UL : crc >> 1;
             }
-            return crc.ToString("x16");
+            // Без дополнения нулями: Windows называет файл как %I64x («a61657a5e5dfbdc», а не «0a61…»).
+            return crc.ToString("x");
         }
 
         // ---------------- DestList ----------------

@@ -210,6 +210,8 @@ namespace PlankWin
             ["fav_addFiles"] = new[] { "Добавить файлы…", "Add files…", "Додати файли…", "Dateien hinzufügen…" },
             ["f_open"] = new[] { "Открыть", "Open", "Відкрити", "Öffnen" },
             ["f_showInFolder"] = new[] { "Показать в папке", "Show in folder", "Показати в теці", "Im Ordner anzeigen" },
+            ["m_addFileFav"] = new[] { "Добавить файл в избранное", "Add file to favorites", "Додати файл до обраного", "Datei zu Favoriten hinzufügen" },
+            ["rc_addFav"] = new[] { "В избранные файлы", "Add to favorite files", "До обраних файлів", "Zu favorisierten Dateien" },
             ["f_rename"] = new[] { "Переименовать для панели…", "Rename for the dock…", "Перейменувати для панелі…", "Für das Dock umbenennen…" },
             ["f_restoreName"] = new[] { "Вернуть оригинальное имя", "Restore original name", "Повернути оригінальну назву", "Originalnamen wiederherstellen" },
             ["f_missing"] = new[] { "Файл не найден", "File not found", "Файл не знайдено", "Datei nicht gefunden" },

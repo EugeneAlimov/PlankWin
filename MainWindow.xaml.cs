@@ -2125,6 +2125,20 @@ namespace PlankWin
                     foreach (var it in menu.Items.OfType<MenuItem>())
                         if (Equals(it.Tag, "AddFolderFav")) it.Visibility = canFav ? Visibility.Visible : Visibility.Collapsed;
 
+                    // «Добавить файл в избранное» — если файл активного окна программы нашёлся и он ещё не в избранном.
+                    string? openFile = null;
+                    if (Settings.EnableFavoriteFiles && cmApp.IsRunning && !cmApp.IsFavorites && !IsExplorerApp(cmApp))
+                    {
+                        try { openFile = FindOpenFilePath(cmApp, cmApp.WindowHandle); } catch { }
+                        if (openFile != null && Settings.FavoriteFiles.Contains(openFile, StringComparer.OrdinalIgnoreCase)) openFile = null;
+                    }
+                    foreach (var it in menu.Items.OfType<MenuItem>())
+                        if (Equals(it.Tag, "AddFileFav"))
+                        {
+                            it.Visibility = openFile != null ? Visibility.Visible : Visibility.Collapsed;
+                            it.CommandParameter = openFile;
+                        }
+
                     UpdateRecentMenu(menu, cmApp);
                 }
 

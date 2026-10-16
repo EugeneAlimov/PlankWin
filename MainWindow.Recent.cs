@@ -112,6 +112,19 @@ namespace PlankWin
 
             var tools = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(16, 0, -8, 0), VerticalAlignment = VerticalAlignment.Center };
             if (!it.IsCommand && !it.IsUrl) tools.Children.Add(folderBtn);
+            // «В избранные файлы» — для настоящих файлов, которых там ещё нет.
+            Border? favBtn = null;
+            if (Settings.EnableFavoriteFiles && !it.IsCommand && !it.IsUrl && System.IO.File.Exists(it.Path)
+                && !Settings.FavoriteFiles.Contains(it.Path, StringComparer.OrdinalIgnoreCase))
+            {
+                favBtn = MiniGlyphButton("\uE8A5", Loc.T("rc_addFav"), () =>
+                {
+                    AddFilesToFavorites(new[] { it.Path });
+                    BuildRecentItems(host, app); // перерисовать: кнопка у этого пункта исчезнет
+                });
+                favBtn.Opacity = 0;
+                tools.Children.Add(favBtn);
+            }
             tools.Children.Add(pinBtn);
             // Кнопки видны только под курсором; у закреплённых булавка видна всегда.
             folderBtn.Opacity = 0;
@@ -131,8 +144,8 @@ namespace PlankWin
                 ToolTip = !exists ? it.Path + "\n" + Loc.T("rc_missing")
                         : it.Tooltip ?? (it.IsCommand ? null : it.Path)
             };
-            mi.MouseEnter += (s, e) => { folderBtn.Opacity = 0.75; pinBtn.Opacity = 0.75; };
-            mi.MouseLeave += (s, e) => { folderBtn.Opacity = 0; pinBtn.Opacity = pinned ? 0.6 : 0; };
+            mi.MouseEnter += (s, e) => { folderBtn.Opacity = 0.75; pinBtn.Opacity = 0.75; if (favBtn != null) favBtn.Opacity = 0.75; };
+            mi.MouseLeave += (s, e) => { folderBtn.Opacity = 0; pinBtn.Opacity = pinned ? 0.6 : 0; if (favBtn != null) favBtn.Opacity = 0; };
             mi.Click += (s, e) =>
             {
                 if (!exists) return;

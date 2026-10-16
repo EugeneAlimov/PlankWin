@@ -691,6 +691,19 @@ namespace PlankWin
                     menu.Items.Add(miMax);
 
                     // Карточка Проводника -> добавить папку этого окна в избранное.
+                    // Карточка окна с документом -> добавить файл этого окна в избранные файлы.
+                    if (Settings.EnableFavoriteFiles && _previewApp != null && !IsExplorerApp(_previewApp))
+                    {
+                        string? fp = null;
+                        try { fp = FindOpenFilePath(_previewApp, hwndLocal); } catch { }
+                        if (fp != null && !Settings.FavoriteFiles.Contains(fp, StringComparer.OrdinalIgnoreCase))
+                        {
+                            var miFile = new MenuItem { Header = Loc.T("m_addFileFav") };
+                            miFile.Click += (s2, e2) => AddFilesToFavorites(new[] { fp });
+                            menu.Items.Add(new Separator());
+                            menu.Items.Add(miFile);
+                        }
+                    }
                     if (Settings.EnableFavorites && IsExplorerApp(_previewApp))
                     {
                         string? folder = GetExplorerFolderPath(hwndLocal);

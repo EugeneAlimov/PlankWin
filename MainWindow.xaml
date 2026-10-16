@@ -527,6 +527,8 @@
                                                       Visibility="{Binding RunAsAdminVisibility}"/>
                                             <MenuItem Header="{DynamicResource L_m_addFolderFav}" Tag="AddFolderFav" Click="OnAddExplorerFolderToFavClick" Icon="&#xE734;"
                                                       Visibility="Collapsed"/>
+                                            <MenuItem Header="{DynamicResource L_m_addFileFav}" Tag="AddFileFav" Click="OnAddOpenFileToFavClick" Icon="&#xE8A5;"
+                                                      Visibility="Collapsed"/>
                                             <MenuItem Header="{DynamicResource L_m_recent}" Tag="Recent" Icon="&#xE81C;" Visibility="Collapsed"/>
                                             <Separator />
 

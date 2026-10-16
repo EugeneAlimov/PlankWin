@@ -883,6 +883,43 @@ namespace PlankWin
         }
 
         // ПКМ по кнопке Проводника -> «Добавить папку в избранное» (папка активного окна).
+        // Путь к файлу, открытому в окне. В заголовке обычно только имя («Отчёт.docx - Word»),
+        // поэтому ищем: 1) полный путь прямо в заголовке (Notepad++, TIA…), 2) имя файла среди «Недавнего» программы.
+        private string? FindOpenFilePath(DockAppConfig app, IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero) hwnd = app.WindowHandle;
+            if (hwnd == IntPtr.Zero && app.WindowHandles.Count > 0) hwnd = app.WindowHandles[0];
+            var sb = new System.Text.StringBuilder(1024);
+            Win32Helper.GetWindowText(hwnd, sb, sb.Capacity);
+            string title = sb.ToString();
+            if (title.Length == 0) return null;
+
+            // 1) Полный путь в заголовке.
+            var m = System.Text.RegularExpressions.Regex.Match(title, @"[A-Za-z]:\\[^<>|""*?\r\n]+?\.[A-Za-z0-9]{1,8}(?=$|[\s\]\)\-—–*•])");
+            if (m.Success && System.IO.File.Exists(m.Value.Trim())) return m.Value.Trim();
+
+            // 2) Имя файла из «Недавнего».
+            List<RecentItem> recent;
+            try { recent = RecentDocs.Get(app); } catch { return null; }
+            string? best = null; int bestScore = 0;
+            foreach (var r in recent)
+            {
+                if (r.IsCommand || r.IsUrl || !System.IO.File.Exists(r.Path)) continue;
+                string fn = System.IO.Path.GetFileName(r.Path), stem = System.IO.Path.GetFileNameWithoutExtension(r.Path);
+                int score = title.Contains(fn, StringComparison.OrdinalIgnoreCase) ? 2
+                          : (stem.Length >= 3 && title.Contains(stem, StringComparison.OrdinalIgnoreCase)) ? 1 : 0;
+                if (r.IsOpenNow) score += 3; // TIA: открытый сейчас проект
+                if (score > bestScore) { bestScore = score; best = r.Path; } // при равенстве — более свежий (раньше в списке)
+            }
+            return best;
+        }
+
+        private void OnAddOpenFileToFavClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is MenuItem mi && mi.CommandParameter is string path) AddFilesToFavorites(new[] { path });
+            if (_activeIconMenu != null) _activeIconMenu.IsOpen = false;
+        }
+
         private void OnAddExplorerFolderToFavClick(object sender, RoutedEventArgs e)
         {
             if (sender is MenuItem mi && mi.DataContext is DockAppConfig app)
