@@ -306,7 +306,7 @@ namespace PlankWin
             return System.Windows.Media.Color.FromRgb(Mix(c.R), Mix(c.G), Mix(c.B));
         }
 
-                private void ApplySystemTheme()
+        private void ApplySystemTheme()
         {
             bool isDark = false;
             try
@@ -1099,6 +1099,13 @@ namespace PlankWin
             // Кнопка "Избранное" — панель откроется на следующем шаге (пока заглушка).
             if (app.IsFavorites) { if (Settings.FavoritesOpenMode == FavoritesOpenMode.Click) ToggleFavoritesPanel(btn); return; }
 
+            // Клики с модификаторами — как на таскбаре Windows: Shift — новое окно, Ctrl+Shift — от администратора;
+            // своё: Alt — папка программы.
+            var mods = Keyboard.Modifiers;
+            if (mods == ModifierKeys.Shift) { HidePreview(); LaunchNewInstance(app, admin: false, bounce: btn); return; }
+            if (mods == (ModifierKeys.Control | ModifierKeys.Shift)) { HidePreview(); LaunchNewInstance(app, admin: true, bounce: btn); return; }
+            if (mods == ModifierKeys.Alt) { HidePreview(); OpenAppLocation(app); return; }
+
             // Клик по кнопке = намеренное переключение окна: закрываем превью и
             // отменяем возврат прежнего окна (иначе Aero Peek перекроет активированное).
             _peekPrevForeground = IntPtr.Zero;
@@ -1262,57 +1269,64 @@ namespace PlankWin
 
         private void OnLaunchNewInstanceClick(object sender, RoutedEventArgs e)
         {
-            if (sender is MenuItem menuItem && menuItem.DataContext is DockAppConfig app)
-            {
-                try
-                {
-                    string launchPath; string launchArgs;
-                    if (TryGetPwaLaunch(app.Path, out string _pwaFile, out string _pwaArgs)) { launchPath = _pwaFile; launchArgs = _pwaArgs; }
-                    else if (!string.IsNullOrEmpty(app.LaunchUri)) { launchPath = app.LaunchUri; launchArgs = string.Empty; }
-                    else { launchPath = ResolveLaunchPath(app.Path); launchArgs = app.Arguments ?? string.Empty; }
-                    var psi = new ProcessStartInfo { FileName = launchPath, Arguments = launchArgs, UseShellExecute = true };
-                    if (!app.IsPackaged && System.IO.File.Exists(launchPath))
-                        psi.WorkingDirectory = System.IO.Path.GetDirectoryName(launchPath) ?? string.Empty;
-                    Process.Start(psi);
-                    if (Settings.AutoHide) HideDock();
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"{Loc.T("err_launch")}\n{ex.Message}", "PlankWin", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            }
-
+            if (sender is MenuItem menuItem && menuItem.DataContext is DockAppConfig app) LaunchNewInstance(app, admin: false);
             if (_activeIconMenu != null) _activeIconMenu.IsOpen = false;
+        }
+
+        // Новый экземпляр приложения (меню, средний клик, Shift+клик) или от администратора (Ctrl+Shift+клик).
+        // Учитывает PWA, ярлыки лаунчеров (.url), рабочую папку exe. Для UWP/URI повышение прав неприменимо.
+        private void LaunchNewInstance(DockAppConfig app, bool admin, Button? bounce = null)
+        {
+            try
+            {
+                string launchPath; string launchArgs;
+                if (TryGetPwaLaunch(app.Path, out string _pwaFile, out string _pwaArgs)) { launchPath = _pwaFile; launchArgs = _pwaArgs; }
+                else if (!string.IsNullOrEmpty(app.LaunchUri)) { launchPath = app.LaunchUri; launchArgs = string.Empty; }
+                else { launchPath = ResolveLaunchPath(app.Path); launchArgs = app.Arguments ?? string.Empty; }
+                var psi = new ProcessStartInfo { FileName = launchPath, Arguments = launchArgs, UseShellExecute = true };
+                if (!app.IsPackaged && System.IO.File.Exists(launchPath))
+                {
+                    psi.WorkingDirectory = System.IO.Path.GetDirectoryName(launchPath) ?? string.Empty;
+                    if (admin) psi.Verb = "runas";
+                }
+                Process.Start(psi);
+                if (bounce != null) AnimateLaunchBounce(bounce);
+                if (Settings.AutoHide) HideDock();
+            }
+            catch (System.ComponentModel.Win32Exception w32) when (w32.NativeErrorCode == 1223)
+            {
+                // Пользователь отменил запрос UAC — тихо игнорируем.
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"{Loc.T("err_launch")}\n{ex.Message}", "PlankWin", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // Alt+клик: папка программы в Проводнике с выделенным exe (у игр из лаунчеров — папка установки).
+        private void OpenAppLocation(DockAppConfig app)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(app.LaunchUri))
+                {
+                    if (!string.IsNullOrEmpty(app.InstallDir) && System.IO.Directory.Exists(app.InstallDir))
+                        Process.Start(new ProcessStartInfo("explorer.exe", "\"" + app.InstallDir + "\"") { UseShellExecute = true });
+                    return;
+                }
+                if (app.IsPackaged || TryGetPwaLaunch(app.Path, out _, out _)) return;
+                string exe = ResolveLaunchPath(app.Path);
+                if (System.IO.File.Exists(exe))
+                    Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + exe + "\"") { UseShellExecute = true });
+            }
+            catch { }
         }
 
         // Запуск НОВОГО экземпляра приложения с повышенными правами (UAC). Работает для
         // обычных exe; для UWP пункт скрыт (RunAsAdminVisibility). Отмену UAC глушим.
         private void OnRunAsAdminClick(object sender, RoutedEventArgs e)
         {
-            if (sender is MenuItem menuItem && menuItem.DataContext is DockAppConfig app)
-            {
-                try
-                {
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = app.Path,
-                        Arguments = app.Arguments ?? string.Empty,
-                        UseShellExecute = true,
-                        Verb = "runas"
-                    };
-                    Process.Start(psi);
-                    if (Settings.AutoHide) HideDock();
-                }
-                catch (System.ComponentModel.Win32Exception w32) when (w32.NativeErrorCode == 1223)
-                {
-                    // Пользователь отменил запрос UAC — тихо игнорируем.
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"{Loc.T("err_launch")}\n{ex.Message}", "PlankWin", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            }
-
+            if (sender is MenuItem menuItem && menuItem.DataContext is DockAppConfig app) LaunchNewInstance(app, admin: true);
             if (_activeIconMenu != null) _activeIconMenu.IsOpen = false;
         }
 
@@ -1886,29 +1900,9 @@ namespace PlankWin
         {
             if (e.ChangedButton == MouseButton.Middle)
             {
-                if (sender is Button btn && btn.DataContext is DockAppConfig app)
+                if (sender is Button btn && btn.DataContext is DockAppConfig app && !app.IsFavorites && !app.IsPlaceholder)
                 {
-                    try
-                    {
-                        var psi = new ProcessStartInfo
-                        {
-                            FileName = app.Path,
-                            Arguments = app.Arguments ?? string.Empty,
-                            UseShellExecute = true
-                        };
-                        Process.Start(psi);
-
-                        if (Settings.AutoHide)
-                        {
-                            _isHidden = true;
-                            PositionDock();
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        MessageBox.Show($"{Loc.T("err_launch")}\n{ex.Message}", "PlankWin", MessageBoxButton.OK, MessageBoxImage.Error);
-                    }
-
+                    LaunchNewInstance(app, admin: false, bounce: btn);
                     e.Handled = true;
                 }
             }
