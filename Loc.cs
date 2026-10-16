@@ -43,6 +43,12 @@ namespace PlankWin
         {
             ["set_title"] = new[] { "Настройки PlankWin", "PlankWin Settings", "Налаштування PlankWin", "PlankWin-Einstellungen" },
             ["tab_behavior"] = new[] { "Поведение и Положение", "Behavior & Position", "Поведінка й положення", "Verhalten & Position" },
+            ["badges"] = new[] { "Счётчики уведомлений на иконках", "Notification counters on icons", "Лічильники сповіщень на іконках", "Benachrichtigungszähler auf Symbolen" },
+            ["badges_hint"] = new[] {
+                "Число берётся из заголовка окна: Telegram, Viber, WhatsApp и почта в браузере и т.п.",
+                "The number is taken from the window title: Telegram, Viber, WhatsApp, web mail etc.",
+                "Число береться із заголовка вікна: Telegram, Viber, WhatsApp, пошта в браузері тощо.",
+                "Die Zahl stammt aus dem Fenstertitel: Telegram, Viber, WhatsApp, Web-Mail usw." },
             ["hk_label"] = new[] { "Горячие клавиши", "Hotkeys", "Гарячі клавіші", "Tastenkürzel" },
             ["hk_off"] = new[] { "Выключены", "Off", "Вимкнено", "Aus" },
             ["hk_hint"] = new[] { "1…9 — иконки по порядку (как клик), 0 — избранное.", "1…9 — icons in order (same as a click), 0 — favorites.", "1…9 — іконки по порядку (як клік), 0 — обране.", "1…9 — Symbole der Reihe nach (wie ein Klick), 0 — Favoriten." },

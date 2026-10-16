@@ -251,6 +251,10 @@
                             <ComboBox x:Name="CmbHotkeys" Grid.Column="1" SelectionChanged="CmbHotkeys_SelectionChanged"/>
                         </Grid>
                         <TextBlock x:Name="TxtHotkeys" TextWrapping="Wrap" FontSize="11" Opacity="0.6" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,12"/>
+                        <CheckBox x:Name="ChkBadges" Style="{StaticResource ToggleSwitchStyle}" Content="{DynamicResource L_badges}"
+                                  Checked="ChkBadges_Changed" Unchecked="ChkBadges_Changed" Margin="0,0,0,4"/>
+                        <TextBlock TextWrapping="Wrap" FontSize="11" Opacity="0.6" Foreground="{DynamicResource MenuTextBrush}" Margin="50,0,0,12"
+                                   Text="{DynamicResource L_badges_hint}"/>
                         <!-- Перенос конфигурации: все панели, кнопки, избранное и настройки одним файлом. -->
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                             <Button Content="{DynamicResource L_cfg_export}" Click="BtnExportConfig_Click" Padding="12,5" Margin="0,0,8,0"/>

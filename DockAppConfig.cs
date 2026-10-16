@@ -91,6 +91,24 @@ namespace PlankWin
             set { if (_isRunning == value) return; _isRunning = value; OnPropertyChanged(); }
         }
 
+        // Счётчик из заголовка окна (Telegram (5), (3) WhatsApp…) — бейдж в углу иконки.
+        private int _badgeCount;
+        [JsonIgnore]
+        public int BadgeCount
+        {
+            get => _badgeCount;
+            set
+            {
+                if (_badgeCount == value) return;
+                _badgeCount = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(BadgeText));
+                OnPropertyChanged(nameof(HasBadge));
+            }
+        }
+        [JsonIgnore] public string BadgeText => _badgeCount > 99 ? "99+" : _badgeCount.ToString();
+        [JsonIgnore] public bool HasBadge => _badgeCount > 0;
+
         private int _runningInstancesCount;
         [JsonIgnore]
         public int RunningInstancesCount

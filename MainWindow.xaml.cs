@@ -116,6 +116,7 @@ namespace PlankWin
                 if (_rawInputOwner == null) RegisterRawInput();
                 // Горячие клавиши — тоже одна регистрация на процесс.
                 if (_hotkeyOwner == null) { _hotkeyOwner = this; Dispatcher.BeginInvoke(new Action(ApplyHotkeys)); }
+                StartBadgeTimer();
             }
         }
 
@@ -171,6 +172,7 @@ namespace PlankWin
             }
 
             ReleaseHotkeysOnClose();
+            StopBadgeTimer();
             StopProcessMonitor();
             base.OnClosed(e);
         }

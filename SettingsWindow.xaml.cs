@@ -34,6 +34,7 @@ namespace PlankWin
             InitializeComponent();
             _profileName = profileName;
             ChkCheckUpdates.IsChecked = GlobalConfig.CheckUpdates;
+            ChkBadges.IsChecked = GlobalConfig.ShowBadges;
             FillHotkeysCombo();
             TxtVersion.Text = string.Format(Loc.T("upd_version"), Updater.CurrentText) + (Updater.IsDevBuild ? " · " + Loc.T("upd_dev") : "");
 
@@ -180,6 +181,12 @@ namespace PlankWin
                 : string.Format(Loc.T("hk_busy"), string.Join(", ", MainWindow.HotkeyFailures));
             // Ctrl+Alt = AltGr: на раскладках с AltGr (de, hu, pl…) перестанут печататься символы AltGr+цифра.
             if (GlobalConfig.Hotkeys == "ctrlalt") TxtHotkeys.Text += "\n" + Loc.T("hk_altgr");
+        }
+
+        private void ChkBadges_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded) return;
+            GlobalConfig.ShowBadges = ChkBadges.IsChecked == true; // таймер бейджей подхватит на следующем тике
         }
 
         private void ChkCheckUpdates_Changed(object sender, RoutedEventArgs e)

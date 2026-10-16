@@ -625,6 +625,27 @@
                                                 </Style>
                                             </Path.Style>
                                         </Path>
+                                        <!-- Бейдж-счётчик (из заголовка окна): красная «таблетка» в правом верхнем углу иконки. -->
+                                        <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-3,-5,0"
+                                                MinWidth="17" Height="17" CornerRadius="8.5" Padding="4,0"
+                                                Background="#E53935" BorderBrush="#40000000" BorderThickness="0.5"
+                                                IsHitTestVisible="False" Opacity="{Binding AppearOpacity}">
+                                            <Border.Effect>
+                                                <DropShadowEffect BlurRadius="4" ShadowDepth="1" Direction="270" Opacity="0.45" Color="Black"/>
+                                            </Border.Effect>
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasBadge}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock Text="{Binding BadgeText}" Foreground="White" FontSize="10.5" FontWeight="SemiBold"
+                                                       FontFamily="Segoe UI" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
                                     </Grid>
                                 </Button>
                                 <DataTemplate.Triggers>
