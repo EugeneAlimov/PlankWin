@@ -114,6 +114,8 @@ namespace PlankWin
                 // Сырой ввод мыши (упор в край). Регистрация действует на ПРОЦЕСС и только для одного
                 // окна (последнего зарегистрировавшего), поэтому регистрирует одна панель и раздаёт всем.
                 if (_rawInputOwner == null) RegisterRawInput();
+                // Горячие клавиши — тоже одна регистрация на процесс.
+                if (_hotkeyOwner == null) { _hotkeyOwner = this; Dispatcher.BeginInvoke(new Action(ApplyHotkeys)); }
             }
         }
 
@@ -168,6 +170,7 @@ namespace PlankWin
                 next?.RegisterRawInput();
             }
 
+            ReleaseHotkeysOnClose();
             StopProcessMonitor();
             base.OnClosed(e);
         }
@@ -181,6 +184,8 @@ namespace PlankWin
             const int WM_GETMINMAXINFO = 0x0024;
             const int WM_MOUSEHWHEEL = 0x020E;
             const int WM_MOUSEWHEEL = 0x020A;
+
+            if (HandleHotkeyMessage(msg, wParam)) { handled = true; return IntPtr.Zero; }
 
             if (msg == WM_MOUSEHWHEEL)
             {

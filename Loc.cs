@@ -43,6 +43,15 @@ namespace PlankWin
         {
             ["set_title"] = new[] { "Настройки PlankWin", "PlankWin Settings", "Налаштування PlankWin", "PlankWin-Einstellungen" },
             ["tab_behavior"] = new[] { "Поведение и Положение", "Behavior & Position", "Поведінка й положення", "Verhalten & Position" },
+            ["hk_label"] = new[] { "Горячие клавиши", "Hotkeys", "Гарячі клавіші", "Tastenkürzel" },
+            ["hk_off"] = new[] { "Выключены", "Off", "Вимкнено", "Aus" },
+            ["hk_hint"] = new[] { "1…9 — иконки по порядку (как клик), 0 — избранное.", "1…9 — icons in order (same as a click), 0 — favorites.", "1…9 — іконки по порядку (як клік), 0 — обране.", "1…9 — Symbole der Reihe nach (wie ein Klick), 0 — Favoriten." },
+            ["hk_altgr"] = new[] {
+                "Внимание: Ctrl+Alt — это AltGr. На раскладках с AltGr (немецкая, венгерская, польская…) перестанут печататься символы AltGr+цифра, например { [ ] }.",
+                "Note: Ctrl+Alt is AltGr. On layouts with AltGr (German, Hungarian, Polish…) AltGr+digit characters such as { [ ] } will stop working.",
+                "Увага: Ctrl+Alt — це AltGr. На розкладках з AltGr (німецька, угорська, польська…) перестануть друкуватися символи AltGr+цифра, наприклад { [ ] }.",
+                "Achtung: Strg+Alt ist AltGr. Auf Layouts mit AltGr (Deutsch, Ungarisch, Polnisch…) funktionieren AltGr+Ziffer-Zeichen wie { [ ] } nicht mehr." },
+            ["hk_busy"] = new[] { "Заняты другой программой или Windows: {0}. Выберите другое сочетание.", "Taken by another app or Windows: {0}. Pick another combination.", "Зайняті іншою програмою або Windows: {0}. Оберіть інше поєднання.", "Von einer anderen App oder Windows belegt: {0}. Bitte andere Kombination wählen." },
             ["crash_title"] = new[] { "PlankWin — отчёт об ошибке", "PlankWin — error report", "PlankWin — звіт про помилку", "PlankWin — Fehlerbericht" },
             ["crash_text"] = new[] {
                 "В прошлый раз в PlankWin произошла ошибка. Если не сложно, скопируйте отчёт и перешлите автору — это поможет её исправить. В отчёте только версия программы и Windows, мониторы и техническое описание ошибки.",

@@ -34,6 +34,7 @@ namespace PlankWin
             InitializeComponent();
             _profileName = profileName;
             ChkCheckUpdates.IsChecked = GlobalConfig.CheckUpdates;
+            FillHotkeysCombo();
             TxtVersion.Text = string.Format(Loc.T("upd_version"), Updater.CurrentText) + (Updater.IsDevBuild ? " · " + Loc.T("upd_dev") : "");
 
             var allPositions = (DockPosition[])Enum.GetValues(typeof(DockPosition));
@@ -148,6 +149,37 @@ namespace PlankWin
         private void BtnClose_Click(object sender, RoutedEventArgs e)
         {
             this.Close();
+        }
+
+        private bool _fillingHotkeys;
+        private void FillHotkeysCombo()
+        {
+            _fillingHotkeys = true;
+            CmbHotkeys.Items.Clear();
+            foreach (var m in MainWindow.HotkeyModes)
+                CmbHotkeys.Items.Add(new ComboBoxItem { Content = m.key == "off" ? Loc.T("hk_off") : m.label + " + 1…9 / 0", Tag = m.key });
+            CmbHotkeys.SelectedItem = CmbHotkeys.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == GlobalConfig.Hotkeys)
+                                      ?? CmbHotkeys.Items[0];
+            _fillingHotkeys = false;
+            UpdateHotkeysStatus();
+        }
+
+        private void CmbHotkeys_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_fillingHotkeys || CmbHotkeys.SelectedItem is not ComboBoxItem it) return;
+            GlobalConfig.Hotkeys = (string)it.Tag;
+            MainWindow.ApplyHotkeys();
+            UpdateHotkeysStatus();
+        }
+
+        private void UpdateHotkeysStatus()
+        {
+            if (GlobalConfig.Hotkeys == "off") { TxtHotkeys.Text = ""; return; }
+            TxtHotkeys.Text = MainWindow.HotkeyFailures.Count == 0
+                ? Loc.T("hk_hint")
+                : string.Format(Loc.T("hk_busy"), string.Join(", ", MainWindow.HotkeyFailures));
+            // Ctrl+Alt = AltGr: на раскладках с AltGr (de, hu, pl…) перестанут печататься символы AltGr+цифра.
+            if (GlobalConfig.Hotkeys == "ctrlalt") TxtHotkeys.Text += "\n" + Loc.T("hk_altgr");
         }
 
         private void ChkCheckUpdates_Changed(object sender, RoutedEventArgs e)

@@ -13,6 +13,7 @@ namespace PlankWin
             public List<string> DisabledMonitors { get; set; } = new();
             public string Language { get; set; } = "auto"; // "auto" | ru | en | uk | de
             public bool CheckUpdates { get; set; } = true;   // автопроверка обновлений на GitHub
+            public string Hotkeys { get; set; } = "altshift";   // модификаторы для <mod>+1…9 / 0: off | winalt | ctrlalt | winshift | altshift
         }
 
         private static Data _data = Load();
@@ -41,6 +42,12 @@ namespace PlankWin
         {
             get => _data.Language;
             set { _data.Language = string.IsNullOrEmpty(value) ? "auto" : value; Save(); }
+        }
+
+        public static string Hotkeys
+        {
+            get => string.IsNullOrEmpty(_data.Hotkeys) ? "altshift" : _data.Hotkeys;
+            set { _data.Hotkeys = value; Save(); }
         }
 
         public static bool CheckUpdates
