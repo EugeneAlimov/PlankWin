@@ -454,6 +454,15 @@ namespace PlankWin
         // одна панель — пункты плоско, несколько — подменю на каждый монитор (слева направо).
         private static System.Windows.Forms.NotifyIcon? _sharedTray;
         private static readonly List<MainWindow> _trayDocks = new();
+        private static Action? _balloonClick;
+
+        // Уведомление из трея (на Win10/11 — системный тост). onClick — действие по клику на уведомление.
+        public static void ShowTrayBalloon(string title, string text, Action? onClick)
+        {
+            if (_sharedTray == null) return;
+            _balloonClick = onClick;
+            try { _sharedTray.ShowBalloonTip(8000, title, text, System.Windows.Forms.ToolTipIcon.Info); } catch { }
+        }
 
         private void SetupTrayIcon()
         {
@@ -468,6 +477,8 @@ namespace PlankWin
             }
             catch { }
 
+            _sharedTray.BalloonTipClicked += (s, a) => { var act = _balloonClick; _balloonClick = null; act?.Invoke(); };
+
             var menu = new System.Windows.Forms.ContextMenuStrip();
             menu.Items.Add("PlankWin"); // заглушка: пустое меню WinForms не открывает
             menu.Opening += (s, args) =>
@@ -475,6 +486,14 @@ namespace PlankWin
                 menu.Items.Clear();
                 var titleItem = new System.Windows.Forms.ToolStripMenuItem(Loc.T("tray_title")) { Enabled = false };
                 menu.Items.Add(titleItem);
+                // Найдено обновление — первым пунктом.
+                if (Updater.Available is Updater.ReleaseInfo upd)
+                {
+                    var updItem = new System.Windows.Forms.ToolStripMenuItem(string.Format(Loc.T("upd_menu"), upd.Version.ToString(3)))
+                    { Font = new System.Drawing.Font(menu.Font, System.Drawing.FontStyle.Bold), Enabled = !Updater.Busy };
+                    updItem.Click += (s2, a2) => _ = Updater.PromptAndUpdate(upd);
+                    menu.Items.Add(updItem);
+                }
                 menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
 
                 var app = Application.Current as App;
@@ -514,6 +533,9 @@ namespace PlankWin
                 }
 
                 menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+                var checkItem = new System.Windows.Forms.ToolStripMenuItem(Loc.T("upd_check")) { Enabled = !Updater.Busy };
+                checkItem.Click += (s2, a2) => _ = Updater.ManualCheck();
+                menu.Items.Add(checkItem);
                 var exitItem = new System.Windows.Forms.ToolStripMenuItem(Loc.T("tray_exit"));
                 exitItem.Click += (s2, a2) =>
                 {

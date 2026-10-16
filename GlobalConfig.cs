@@ -12,6 +12,7 @@ namespace PlankWin
         {
             public List<string> DisabledMonitors { get; set; } = new();
             public string Language { get; set; } = "auto"; // "auto" | ru | en | uk | de
+            public bool CheckUpdates { get; set; } = true;   // автопроверка обновлений на GitHub
         }
 
         private static Data _data = Load();
@@ -40,6 +41,12 @@ namespace PlankWin
         {
             get => _data.Language;
             set { _data.Language = string.IsNullOrEmpty(value) ? "auto" : value; Save(); }
+        }
+
+        public static bool CheckUpdates
+        {
+            get => _data.CheckUpdates;
+            set { _data.CheckUpdates = value; Save(); }
         }
 
         public static bool IsMonitorEnabled(string deviceName) =>

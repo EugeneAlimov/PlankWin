@@ -33,6 +33,8 @@ namespace PlankWin
         {
             InitializeComponent();
             _profileName = profileName;
+            ChkCheckUpdates.IsChecked = GlobalConfig.CheckUpdates;
+            TxtVersion.Text = string.Format(Loc.T("upd_version"), Updater.CurrentText) + (Updater.IsDevBuild ? " · " + Loc.T("upd_dev") : "");
 
             var allPositions = (DockPosition[])Enum.GetValues(typeof(DockPosition));
             var allowedPositions = new List<DockPosition>();
@@ -146,6 +148,12 @@ namespace PlankWin
         private void BtnClose_Click(object sender, RoutedEventArgs e)
         {
             this.Close();
+        }
+
+        private void ChkCheckUpdates_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded) return;
+            GlobalConfig.CheckUpdates = ChkCheckUpdates.IsChecked == true;
         }
 
         private void BtnExportConfig_Click(object sender, RoutedEventArgs e)

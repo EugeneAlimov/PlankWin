@@ -10,6 +10,9 @@ namespace PlankWin
             // ОТКЛЮЧАЕМ ТОРМОЗА ОТ МЫШЕК С ВЫСОКОЙ ЧАСТОТОЙ ОПРОСА (MX Master 3S и др.)
             // Это отключит поиск сенсорных жестов и разблокирует UI-поток
             AppContext.SetSwitch("Switch.System.Windows.Input.Stylus.DisableStylusAndTouchSupport", true);
+
+            // Отчёты об ошибках — как можно раньше, чтобы поймать и падения при старте.
+            CrashReporter.Install(this);
         }
 
         // Словарь для хранения открытых панелей. Ключ - системное имя монитора (например, \\.\DISPLAY1)
@@ -23,6 +26,7 @@ namespace PlankWin
             {
                 try { System.Diagnostics.Process.GetProcessById(oldPid).WaitForExit(8000); } catch { }
             }
+            Updater.CleanupOld(); // хвост прошлого обновления (PlankWin.exe.old)
             PlankWin.StartMenuAumids.Warmup(); // фоном: карта exe → AUMID для меню «Недавнее»
             // Win10: прямые углы у элементов «под систему» (меню, списки, вкладки, превью).
             if (!PlankWin.Win32Helper.IsWin11)
@@ -42,6 +46,22 @@ namespace PlankWin
 
             // Запускаем первую проверку при старте программы
             SyncMonitors();
+
+            // Проверка механизма отчётов: PlankWin.exe --crash-test (ошибка через 3 с; окно отчёта — при следующем запуске).
+            if (Array.IndexOf(e.Args, "--crash-test") >= 0)
+            {
+                var ct = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                ct.Tick += (s, a) => { ct.Stop(); throw new InvalidOperationException("Crash test (--crash-test)"); };
+                ct.Start();
+            }
+
+            // Была ошибка в прошлом сеансе — предложить отчёт (после того как панели поднялись).
+            Dispatcher.BeginInvoke(new Action(CrashReporter.ShowPendingIfAny), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+
+            // Обновления: первая проверка через 20 с после старта, дальше раз в 6 часов.
+            var updTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
+            updTimer.Tick += async (s, a) => { updTimer.Interval = TimeSpan.FromHours(6); await Updater.BackgroundCheck(); };
+            updTimer.Start();
         }
 
         private void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e)

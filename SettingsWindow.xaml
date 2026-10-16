@@ -246,6 +246,9 @@
                             <Button Content="{DynamicResource L_cfg_export}" Click="BtnExportConfig_Click" Padding="12,5" Margin="0,0,8,0"/>
                             <Button Content="{DynamicResource L_cfg_import}" Click="BtnImportConfig_Click" Padding="12,5"/>
                         </StackPanel>
+                        <CheckBox x:Name="ChkCheckUpdates" Style="{StaticResource ToggleSwitchStyle}" Content="{DynamicResource L_upd_auto}"
+                                  Checked="ChkCheckUpdates_Changed" Unchecked="ChkCheckUpdates_Changed" Margin="0,0,0,4"/>
+                        <TextBlock x:Name="TxtVersion" FontSize="11" Opacity="0.6" Foreground="{DynamicResource MenuTextBrush}" Margin="50,0,0,15"/>
 
                         <TextBlock Text="{DynamicResource L_dockMode}" Margin="0,0,0,5" Foreground="{DynamicResource MenuTextBrush}"/>
                         <ComboBox x:Name="CmbVisibilityMode"
