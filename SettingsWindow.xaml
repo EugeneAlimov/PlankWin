@@ -447,6 +447,7 @@
                     <StackPanel Margin="15">
                         <TextBlock Text="{DynamicResource L_sec_fav}" FontWeight="SemiBold" FontSize="13.5" Foreground="{DynamicResource MenuTextBrush}" Margin="0,10,0,10"/>
                         <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="{DynamicResource L_favEnable}" IsChecked="{Binding EnableFavorites}" Margin="0,0,0,10"/>
+                        <CheckBox Style="{StaticResource ToggleSwitchStyle}" Content="{DynamicResource L_favFilesEnable}" IsChecked="{Binding EnableFavoriteFiles}" Margin="0,0,0,10"/>
                         <TextBlock Text="{DynamicResource L_favLayout}" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,4"/>
                         <ComboBox SelectedValuePath="Tag" SelectedValue="{Binding FavoritesLayout}" Margin="0,0,0,15">
                             <ComboBoxItem Content="{DynamicResource L_layout_list}" Tag="{x:Static local:FavoritesLayoutMode.List}"/>

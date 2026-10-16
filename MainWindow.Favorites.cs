@@ -37,41 +37,49 @@ namespace PlankWin
         private double _favResizeW, _favResizeH, _favResizeL, _favResizeT;
         private const int FavHideDelayMs = 500;
 
-        // Добавить/убрать кнопку "Избранное" на доке по состоянию настройки (на лету).
+        // Добавить/убрать кнопки «Избранное» (звезда, папки) и «Избранные файлы» по настройкам (на лету).
         public void ApplyFavoritesButton()
         {
-            var existing = Apps.FirstOrDefault(a => a.IsFavorites);
-            if (Settings.EnableFavorites)
+            ApplyFavButton(files: false, Settings.EnableFavorites, Settings.FavoritesIndex, Loc.T("fav_folders_title"));
+            ApplyFavButton(files: true, Settings.EnableFavoriteFiles, Settings.FavFilesIndex, Loc.T("fav_files_title"));
+        }
+
+        private void ApplyFavButton(bool files, bool enabled, int index, string title)
+        {
+            var existing = Apps.FirstOrDefault(a => a.IsFavorites && a.IsFavFiles == files);
+            if (enabled)
             {
                 if (existing == null)
                 {
-                    int target = System.Math.Clamp(Settings.FavoritesIndex, 0, Apps.Count);
-                    Apps.Insert(target, new DockAppConfig { Name = "\u0418\u0437\u0431\u0440\u0430\u043d\u043d\u043e\u0435", IsFavorites = true });
+                    int target = System.Math.Clamp(index, 0, Apps.Count);
+                    Apps.Insert(target, new DockAppConfig { Name = title, IsFavorites = true, IsFavFiles = files });
                 }
                 else
                 {
-                    // Восстанавливаем сохранённую позицию избранного.
-                    int target = System.Math.Clamp(Settings.FavoritesIndex, 0, Apps.Count - 1);
+                    // Восстанавливаем сохранённую позицию.
+                    int target = System.Math.Clamp(index, 0, Apps.Count - 1);
                     int cur = Apps.IndexOf(existing);
                     if (cur != target) Apps.Move(cur, target);
                 }
             }
-            else
+            else if (existing != null)
             {
-                if (existing != null)
-                {
-                    if (_favHost != null && _favHost.IsVisible) HideFavoritesPanel();
-                    Apps.Remove(existing);
-                }
+                if (_favHost != null && _favHost.IsVisible && _favFiles == files) HideFavoritesPanel();
+                Apps.Remove(existing);
             }
         }
 
-                // Клик по звезде: флип-флоп открыть/закрыть.
+        // Клик по звезде: флип-флоп открыть/закрыть.
         private void ToggleFavoritesPanel(Button btn)
         {
             // Если панель только что закрылась этим же кликом (Deactivated) — не открываем снова.
             if (Environment.TickCount - _favClosedTick < 250) return;
-            if (_favHost != null && _favHost.IsVisible) HideFavoritesPanel();
+            bool wantFiles = btn.Tag is DockAppConfig d && d.IsFavFiles;
+            if (_favHost != null && _favHost.IsVisible)
+            {
+                HideFavoritesPanel();
+                if (wantFiles != _favFiles) ShowFavoritesPanel(btn); // открыта другая панель — переключаемся
+            }
             else ShowFavoritesPanel(btn);
         }
 
@@ -79,7 +87,7 @@ namespace PlankWin
         {
             if (_favHideTimer != null) return;
             _favHideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(FavHideDelayMs) };
-            _favHideTimer.Tick += (s, e) => { _favHideTimer!.Stop(); HideFavoritesPanel(); };
+            _favHideTimer.Tick += (s, e) => { _favHideTimer!.Stop(); if (_favDialogOpen) return; HideFavoritesPanel(); };
         }
 
         private void HideFavoritesSoon()
@@ -127,8 +135,14 @@ namespace PlankWin
             _favHoverTimer.Tick += (s, e) =>
             {
                 _favHoverTimer!.Stop();
-                if (_favPendingButton != null && (_favHost == null || !_favHost.IsVisible))
-                    ShowFavoritesPanel(_favPendingButton);
+                if (_favPendingButton == null) return;
+                bool wantFiles = _favPendingButton.Tag is DockAppConfig d && d.IsFavFiles;
+                if (_favHost != null && _favHost.IsVisible)
+                {
+                    if (wantFiles == _favFiles) return;   // уже открыта нужная
+                    HideFavoritesPanel();                 // открыта соседняя — переключаемся
+                }
+                ShowFavoritesPanel(_favPendingButton);
             };
         }
 
@@ -136,36 +150,10 @@ namespace PlankWin
         {
             HidePreview(); // взаимоисключение: избранное и превью не показываются одновременно
             _favButton = btn;
+            _favFiles = btn.Tag is DockAppConfig fd && fd.IsFavFiles;
             RestoreTooltip(ref _tipFav);
             _tipFav = SuppressTooltip(btn);
-            var folders = Settings.FavoriteFolders.ToList();
-
-            // Контент: список или сетка (по настройке FavoritesLayout).
-            FrameworkElement content;
-            if (folders.Count == 0)
-            {
-                content = new TextBlock
-                {
-                    Text = Loc.T("fav_empty"),
-                    Foreground = new SolidColorBrush(Color.FromRgb(170, 170, 170)),
-                    Margin = new Thickness(10, 8, 10, 8),
-                    FontSize = 12
-                };
-            }
-            else if (Settings.FavoritesLayout == FavoritesLayoutMode.Grid)
-            {
-                var wrap = new EvenWrapPanel { HorizontalAlignment = HorizontalAlignment.Stretch };
-                foreach (var folder in folders)
-                    wrap.Children.Add(BuildFolderTile(folder));
-                content = wrap;
-            }
-            else
-            {
-                var stack = new AnimatedStackPanel { Orientation = Orientation.Vertical };
-                foreach (var folder in folders)
-                    stack.Children.Add(BuildFolderRow(folder));
-                content = stack;
-            }
+            FrameworkElement content = BuildFavContent();
 
             bool isGrid = Settings.FavoritesLayout == FavoritesLayoutMode.Grid;
             _favIsGrid = isGrid;
@@ -187,12 +175,26 @@ namespace PlankWin
                 BorderThickness = new Thickness(1),
                 Effect = new DropShadowEffect { BlurRadius = 25, ShadowDepth = 0, Opacity = 0.35, Color = Colors.Black },
                 Padding = new Thickness(6),
-                Child = new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled },
+                Child = _favScroll = new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled },
                 RenderTransformOrigin = new Point(0.5, 0.5),
                 RenderTransform = scale
             };
             rootBorder.MouseEnter += (s, e) => _favHideTimer?.Stop();
             rootBorder.MouseLeave += (s, e) => HideFavoritesSoon();
+            // Перетаскивание файлов/папок прямо в открытую панель.
+            rootBorder.AllowDrop = true;
+            rootBorder.DragOver += (s, e) =>
+            {
+                e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
+                _favHideTimer?.Stop();
+                e.Handled = true;
+            };
+            rootBorder.Drop += (s, e) =>
+            {
+                // Пересборка панели — после выхода из обработчика Drop (окно в нём закрывать нельзя).
+                if (e.Data.GetData(DataFormats.FileDrop) is string[] dropped) Dispatcher.BeginInvoke(new Action(() => AddToFavoritesRouted(dropped)));
+                e.Handled = true;
+            };
 
             _favHost = new Window
             {
@@ -208,10 +210,16 @@ namespace PlankWin
                 MinWidth = 160,
                 MinHeight = 120
             };
-            _favHost.Deactivated += (s, e) => { if (_favMenuOpen || _favDragging || _favResizing) return; _favClosedTick = Environment.TickCount; HideFavoritesPanel(); };
+            _favHost.Deactivated += (s, e) => { if (_favMenuOpen || _favDragging || _favResizing || _favDialogOpen) return; _favClosedTick = Environment.TickCount; HideFavoritesPanel(); };
 
+            // Показываем невидимым, ставим на место и проявляем после первой отрисовки содержимого —
+            // иначе первый кадр прозрачного окна пустой и в углу экрана (моргание).
+            _favHost.Opacity = 0;
             _favHost.Show();
             PositionFavHost();
+            var hostRef = _favHost;
+            _favHost.Dispatcher.BeginInvoke(new Action(() => { if (hostRef == _favHost && hostRef != null) hostRef.Opacity = 1; }),
+                DispatcherPriority.Render);
 
             // Появление: scale (с ~85%) + fade.
             var dur = new Duration(TimeSpan.FromMilliseconds(140));
@@ -220,6 +228,40 @@ namespace PlankWin
             scale.BeginAnimation(ScaleTransform.ScaleXProperty, sa);
             scale.BeginAnimation(ScaleTransform.ScaleYProperty, sa);
             rootBorder.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, dur) { EasingFunction = ease });
+        }
+
+        // Содержимое панели (список или сетка) — отдельно, чтобы обновлять на месте без переоткрытия окна.
+        private FrameworkElement BuildFavContent()
+        {
+            var folders = FavList.ToList();
+
+            // Контент: список или сетка (по настройке FavoritesLayout).
+            FrameworkElement content;
+            if (folders.Count == 0)
+            {
+                content = new TextBlock
+                {
+                    Text = Loc.T(_favFiles ? "fav_files_empty" : "fav_empty"),
+                    Foreground = new SolidColorBrush(Color.FromRgb(170, 170, 170)),
+                    Margin = new Thickness(10, 8, 10, 8),
+                    FontSize = 12
+                };
+            }
+            else if (Settings.FavoritesLayout == FavoritesLayoutMode.Grid)
+            {
+                var wrap = new EvenWrapPanel { HorizontalAlignment = HorizontalAlignment.Stretch };
+                foreach (var folder in folders)
+                    wrap.Children.Add(BuildFolderTile(folder));
+                content = wrap;
+            }
+            else
+            {
+                var stack = new AnimatedStackPanel { Orientation = Orientation.Vertical };
+                foreach (var folder in folders)
+                    stack.Children.Add(BuildFolderRow(folder));
+                content = stack;
+            }
+            return content;
         }
 
         private Brush TextBrush()
@@ -238,9 +280,9 @@ namespace PlankWin
             _favDragging = false;
         }
 
-                private void CreateFavGhost(string folder)
+        private void CreateFavGhost(string folder)
         {
-            _favGhost.Show(AppIconConverter.ExtractIconFromPath(folder), Settings.IconSize);
+            _favGhost.Show(FavItemIcon(folder), Settings.IconSize);
             UpdateFavGhost();
         }
 
@@ -257,7 +299,7 @@ namespace PlankWin
             _favGhost.Close();
         }
 
-                private Brush HighlightBrush()
+        private Brush HighlightBrush()
         {
             var b = new SmartContrastConverter().Convert(Settings.BackgroundColor, typeof(Brush), "Highlight", System.Globalization.CultureInfo.InvariantCulture) as Brush;
             return b ?? new SolidColorBrush(Color.FromArgb(150, 0, 0, 0));
@@ -269,11 +311,9 @@ namespace PlankWin
             catch { return new SolidColorBrush(fallback); }
         }
 
-                private Border BuildFolderRow(string folder)
+        private Border BuildFolderRow(string folder)
         {
-            string name = string.Empty;
-            try { name = new System.IO.DirectoryInfo(folder).Name; } catch { }
-            if (string.IsNullOrEmpty(name)) name = folder;
+            string name = FavItemName(folder);
 
             var row = new Border
             {
@@ -286,7 +326,7 @@ namespace PlankWin
             };
             var rowStack = new StackPanel { Orientation = Orientation.Horizontal };
 
-            var rowIcon = AppIconConverter.ExtractIconFromPath(folder);
+            var rowIcon = FavItemIcon(folder);
             if (rowIcon != null)
                 rowStack.Children.Add(new Image
                 {
@@ -303,17 +343,21 @@ namespace PlankWin
                 Background = Brushes.Transparent,
                 CornerRadius = new CornerRadius(3),
                 Padding = new Thickness(6, 2, 6, 2),
-                Child = new TextBlock
+                Child = FavLabel(new TextBlock
                 {
                     Text = name,
                     Foreground = TextBrush(),
                     FontSize = 14,
                     VerticalAlignment = VerticalAlignment.Center,
                     TextTrimming = TextTrimming.CharacterEllipsis,
-                    MaxWidth = 250
-                }
+                    MaxWidth = 250,
+                    // Имена файлов из документации длинные — до трёх строк.
+                    TextWrapping = _favFiles ? TextWrapping.Wrap : TextWrapping.NoWrap,
+                    MaxHeight = _favFiles ? 58 : double.PositiveInfinity
+                }, folder, center: false)
             });
             row.Child = rowStack;
+            ApplyFavItemTipAndState(row, folder);
 
             row.MouseEnter += (s, e) => { if (!_favDragging) row.Background = HighlightBrush(); };
             row.MouseLeave += (s, e) => { if (!_favDragging) row.Background = Brushes.Transparent; };
@@ -323,7 +367,7 @@ namespace PlankWin
                 _favDragFolder = folder;
                 _favDragRow = row;
                 _favDragStartY = e.GetPosition(_favHost).Y;
-                _favDragStartIndex = Settings.FavoriteFolders.IndexOf(folder);
+                _favDragStartIndex = FavList.IndexOf(folder);
                 _favDragging = false;
                 _favHideTimer?.Stop();
                 row.CaptureMouse();
@@ -379,8 +423,8 @@ namespace PlankWin
                         // Синхронизируем порядок через Move (без Clear) — меньше перерисовки.
                         for (int _i = 0; _i < order.Count; _i++)
                         {
-                            int _cur = Settings.FavoriteFolders.IndexOf(order[_i]);
-                            if (_cur >= 0 && _cur != _i) Settings.FavoriteFolders.Move(_cur, _i);
+                            int _cur = FavList.IndexOf(order[_i]);
+                            if (_cur >= 0 && _cur != _i) FavList.Move(_cur, _i);
                         }
                         PlankConfig.Save(AppContext.BaseDirectory, _profileName, Settings);
                     }
@@ -388,8 +432,7 @@ namespace PlankWin
                 }
                 else
                 {
-                    try { Process.Start(new ProcessStartInfo { FileName = folder, UseShellExecute = true }); } catch { }
-                    HideFavoritesPanel();
+                    OpenFavItem(folder);
                 }
             };
             AttachFolderContextMenu(row, folder);
@@ -398,9 +441,7 @@ namespace PlankWin
 
         private Border BuildFolderTile(string folder)
         {
-            string name = string.Empty;
-            try { name = new System.IO.DirectoryInfo(folder).Name; } catch { }
-            if (string.IsNullOrEmpty(name)) name = folder;
+            string name = FavItemName(folder);
 
             var tile = new Border
             {
@@ -413,7 +454,7 @@ namespace PlankWin
                 Tag = folder
             };
             var st = new StackPanel { Orientation = Orientation.Vertical };
-            var icon = AppIconConverter.ExtractIconFromPath(folder);
+            var icon = FavItemIcon(folder);
             if (icon != null)
                 st.Children.Add(new Image { Source = icon, Width = Settings.IconSize * 0.9, Height = Settings.IconSize * 0.9, HorizontalAlignment = HorizontalAlignment.Center, Effect = new DropShadowEffect { BlurRadius = 10, ShadowDepth = 2, Direction = 270, Opacity = 0.5, Color = Colors.Black } });
             st.Children.Add(new Border
@@ -423,18 +464,19 @@ namespace PlankWin
                 Padding = new Thickness(4, 1, 4, 1),
                 Margin = new Thickness(0, 4, 0, 0),
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                Child = new TextBlock
+                Child = FavLabel(new TextBlock
                 {
                     Text = name,
                     Foreground = TextBrush(),
                     FontSize = 12,
                     TextAlignment = TextAlignment.Center,
                     TextWrapping = TextWrapping.Wrap,
-                    MaxHeight = 36,
+                    MaxHeight = _favFiles ? 50 : 36,
                     TextTrimming = TextTrimming.CharacterEllipsis
-                }
+                }, folder, center: true)
             });
             tile.Child = st;
+            ApplyFavItemTipAndState(tile, folder);
 
             tile.MouseEnter += (s, e) => { if (!_favDragging) tile.Background = HighlightBrush(); };
             tile.MouseLeave += (s, e) => { if (!_favDragging) tile.Background = Brushes.Transparent; };
@@ -499,8 +541,8 @@ namespace PlankWin
                         // Синхронизируем порядок через Move (без Clear) — меньше перерисовки.
                         for (int _i = 0; _i < order.Count; _i++)
                         {
-                            int _cur = Settings.FavoriteFolders.IndexOf(order[_i]);
-                            if (_cur >= 0 && _cur != _i) Settings.FavoriteFolders.Move(_cur, _i);
+                            int _cur = FavList.IndexOf(order[_i]);
+                            if (_cur >= 0 && _cur != _i) FavList.Move(_cur, _i);
                         }
                         PlankConfig.Save(AppContext.BaseDirectory, _profileName, Settings);
                     }
@@ -508,25 +550,53 @@ namespace PlankWin
                 }
                 else
                 {
-                    try { Process.Start(new ProcessStartInfo { FileName = folder, UseShellExecute = true }); } catch { }
-                    HideFavoritesPanel();
+                    OpenFavItem(folder);
                 }
             };
             AttachFolderContextMenu(tile, folder);
             return tile;
         }
 
-                // ПКМ по папке -> меню опций (пока: убрать из избранного).
+        // ПКМ по папке -> меню опций (пока: убрать из избранного).
         private void AttachFolderContextMenu(FrameworkElement element, string folder)
         {
             element.MouseRightButtonUp += (s, e) =>
             {
                 e.Handled = true;
                 var menu = new ContextMenu();
+                if (_favFiles)
+                {
+                    // Файл: открыть, показать в папке, убрать.
+                    var miOpen = new MenuItem { Header = Loc.T("f_open") };
+                    miOpen.Click += (s2, e2) => OpenFavItem(folder);
+                    var miShow = new MenuItem { Header = Loc.T("f_showInFolder") };
+                    miShow.Click += (s2, e2) => { try { RecentDocs.ShowInFolder(folder); } catch { } HideFavoritesPanel(); };
+                    menu.Items.Add(miOpen);
+                    menu.Items.Add(miShow);
+                    menu.Items.Add(new Separator());
+                    var miRename = new MenuItem { Header = Loc.T("f_rename") };
+                    // После закрытия меню: модальный диалог из обработчика клика оставил бы меню висеть.
+                    miRename.Click += (s2, e2) => Dispatcher.BeginInvoke(new Action(() => RenameFavFile(folder)));
+                    menu.Items.Add(miRename);
+                    if (Settings.FavoriteFileNames.ContainsKey(folder))
+                    {
+                        var miRestore = new MenuItem { Header = Loc.T("f_restoreName") };
+                        miRestore.Click += (s2, e2) =>
+                        {
+                            Settings.FavoriteFileNames.Remove(folder);
+                            PlankConfig.Save(AppContext.BaseDirectory, _profileName, Settings);
+                            RefreshFavoritesPanel();
+                        };
+                        menu.Items.Add(miRestore);
+                    }
+                    menu.Items.Add(new Separator());
+                }
+                var list = FavList;
                 var miRemove = new MenuItem { Header = Loc.T("fav_remove") };
                 miRemove.Click += (s2, e2) =>
                 {
-                    Settings.FavoriteFolders.Remove(folder);
+                    list.Remove(folder);
+                    Settings.FavoriteFileNames.Remove(folder);
                     PlankConfig.Save(AppContext.BaseDirectory, _profileName, Settings);
                     RefreshFavoritesPanel();
                 };
@@ -538,14 +608,24 @@ namespace PlankWin
         }
 
         // Пересобрать открытую панель (после удаления папки).
+        private ScrollViewer? _favScroll;
+
         private void RefreshFavoritesPanel()
         {
+            // Открыта — меняем только содержимое (окно, позиция и прокрутка остаются).
+            if (_favHost != null && _favHost.IsVisible && _favScroll != null)
+            {
+                double off = _favScroll.VerticalOffset;
+                _favScroll.Content = BuildFavContent();
+                _favScroll.Dispatcher.BeginInvoke(new Action(() => _favScroll?.ScrollToVerticalOffset(off)), DispatcherPriority.Loaded);
+                return;
+            }
             var btn = _favButton;
             HideFavoritesPanel();
             if (btn != null) ShowFavoritesPanel(btn);
         }
 
-                // ПКМ по звезде -> выбор способа открытия (синхронизировано с настройками).
+        // ПКМ по звезде -> выбор способа открытия (синхронизировано с настройками).
         private void ShowFavoritesModeMenu(FrameworkElement target)
         {
             var menu = new ContextMenu();
@@ -567,12 +647,21 @@ namespace PlankWin
             menu.Items.Add(miHover);
             menu.Items.Add(new Separator());
 
-            // Выбор папок через системный диалог (можно выделить несколько).
-            var miAdd = new MenuItem { Header = Loc.T("fav_addFolder") };
+            // Выбор папок/файлов через системный диалог (можно выделить несколько).
+            bool filesBtn = target.DataContext is DockAppConfig tb && tb.IsFavFiles;
+            var miAdd = new MenuItem { Header = Loc.T(filesBtn ? "fav_addFiles" : "fav_addFolder") };
             miAdd.Click += (s, e) =>
             {
-                var dlg = new Microsoft.Win32.OpenFolderDialog { Title = Loc.T("fav_dlgTitle"), Multiselect = true };
-                if (dlg.ShowDialog(this) == true) AddFoldersToFavorites(dlg.FolderNames);
+                if (filesBtn)
+                {
+                    var fdlg = new Microsoft.Win32.OpenFileDialog { Title = Loc.T("fav_dlgTitle"), Multiselect = true };
+                    if (fdlg.ShowDialog(this) == true) AddFilesToFavorites(fdlg.FileNames);
+                }
+                else
+                {
+                    var dlg = new Microsoft.Win32.OpenFolderDialog { Title = Loc.T("fav_dlgTitle"), Multiselect = true };
+                    if (dlg.ShowDialog(this) == true) AddFoldersToFavorites(dlg.FolderNames);
+                }
             };
             menu.Items.Add(miAdd);
 
@@ -602,6 +691,159 @@ namespace PlankWin
                 if (_favHost != null && _favHost.IsVisible) RefreshFavoritesPanel();
             }
             return added;
+        }
+
+        // ===== Общие для папок и файлов =====
+        private bool _favFiles; // открыта панель избранных файлов (а не папок)
+
+        private System.Collections.ObjectModel.ObservableCollection<string> FavList =>
+            _favFiles ? Settings.FavoriteFiles : Settings.FavoriteFolders;
+
+        private string FavItemName(string path)
+        {
+            if (_favFiles && Settings.FavoriteFileNames.TryGetValue(path, out var alias) && !string.IsNullOrWhiteSpace(alias)) return alias;
+            string name = string.Empty;
+            try
+            {
+                name = _favFiles ? System.IO.Path.GetFileNameWithoutExtension(path) : new System.IO.DirectoryInfo(path).Name;
+            }
+            catch { }
+            return string.IsNullOrEmpty(name) ? path : name;
+        }
+
+        // Иконка: у папки — её собственная, у файла — программы, которая его открывает (по ассоциации), с кэшем по расширению.
+        private static readonly System.Collections.Generic.Dictionary<string, ImageSource?> _extIconCache = new(StringComparer.OrdinalIgnoreCase);
+        private ImageSource? FavItemIcon(string path)
+        {
+            if (!_favFiles) return AppIconConverter.ExtractIconFromPath(path);
+            string ext = System.IO.Path.GetExtension(path);
+            if (_extIconCache.TryGetValue(ext, out var cached) && cached != null) return cached;
+            ImageSource? img = null;
+            try
+            {
+                string? exe = RecentDocs.GetAssocExe(ext);
+                if (exe != null) img = AppIconConverter.ExtractIconFromPath(exe);
+            }
+            catch { }
+            img ??= System.IO.File.Exists(path) ? AppIconConverter.ExtractIconFromPath(path) : null; // иконка типа файла
+            if (img != null) _extIconCache[ext] = img;
+            return img;
+        }
+
+        // Подсказка: полное имя и путь; отсутствующий файл — бледный.
+        private void ApplyFavItemTipAndState(FrameworkElement el, string path)
+        {
+            // Сетевые пути не проверяем: недоступная шара подвесила бы открытие панели.
+            bool exists = RecentDocs.IsNetworkPath(path) || (_favFiles ? System.IO.File.Exists(path) : System.IO.Directory.Exists(path));
+            string tip = _favFiles ? System.IO.Path.GetFileName(path) + "\n" + System.IO.Path.GetDirectoryName(path) : path;
+            if (!exists) { tip += "\n" + Loc.T("f_missing"); el.Opacity = 0.45; }
+            el.ToolTip = tip;
+            ToolTipService.SetInitialShowDelay(el, 700);
+        }
+
+        // Подпись пункта: при своём имени — под ним мелко настоящее имя файла (чтобы найти оригинал).
+        private FrameworkElement FavLabel(TextBlock main, string path, bool center)
+        {
+            if (!_favFiles || !Settings.FavoriteFileNames.ContainsKey(path)) return main;
+            var sp = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Center };
+            sp.Children.Add(main);
+            sp.Children.Add(new TextBlock
+            {
+                Text = System.IO.Path.GetFileName(path),
+                Foreground = TextBrush(),
+                Opacity = 0.55,
+                FontSize = center ? 10 : 11,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                TextAlignment = center ? TextAlignment.Center : TextAlignment.Left,
+                MaxWidth = main.MaxWidth,
+                Margin = new Thickness(0, 1, 0, 0)
+            });
+            return sp;
+        }
+
+        private bool _favDialogOpen;
+
+        // «Переименовать для панели…»: своё имя хранится в настройках, файл не трогается.
+        private void RenameFavFile(string path)
+        {
+            string current = Settings.FavoriteFileNames.TryGetValue(path, out var a) ? a : System.IO.Path.GetFileNameWithoutExtension(path);
+            _favDialogOpen = true;
+            _favHideTimer?.Stop();
+            string? result;
+            try { result = AskText(Loc.T("f_rename"), System.IO.Path.GetFileName(path), current); }
+            finally { _favDialogOpen = false; }
+            if (result == null) return;
+            result = result.Trim();
+            if (result.Length == 0 || result == System.IO.Path.GetFileNameWithoutExtension(path)) Settings.FavoriteFileNames.Remove(path);
+            else Settings.FavoriteFileNames[path] = result;
+            PlankConfig.Save(AppContext.BaseDirectory, _profileName, Settings);
+            RefreshFavoritesPanel();
+        }
+
+        // Маленький диалог ввода в тон теме. null — отмена.
+        private string? AskText(string title, string hint, string initial)
+        {
+            Brush Res(string k, Brush fb) => Application.Current.TryFindResource(k) as Brush ?? fb;
+            var fg = Res("MenuTextBrush", Brushes.Black);
+            var w = new Window
+            {
+                Title = title,
+                Width = 420,
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                ResizeMode = ResizeMode.NoResize,
+                Background = Res("MenuBgBrush", Brushes.White),
+                Foreground = fg,
+                Topmost = true,
+                ShowInTaskbar = false
+            };
+            var sp = new StackPanel { Margin = new Thickness(16) };
+            sp.Children.Add(new TextBlock { Text = hint, Foreground = fg, Opacity = 0.65, FontSize = 11.5, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 0, 6) });
+            var tb = new TextBox { Text = initial, FontSize = 14, Padding = new Thickness(4, 3, 4, 3) };
+            sp.Children.Add(tb);
+            var bp = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 12, 0, 0) };
+            var ok = new Button { Content = "OK", IsDefault = true, MinWidth = 80, Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 8, 0) };
+            var cancel = new Button { Content = Loc.T("crash_close"), IsCancel = true, MinWidth = 80, Padding = new Thickness(10, 4, 10, 4) };
+            ok.Click += (s, e) => w.DialogResult = true;
+            bp.Children.Add(ok); bp.Children.Add(cancel);
+            sp.Children.Add(bp);
+            w.Content = sp;
+            w.Loaded += (s, e) => { tb.Focus(); tb.SelectAll(); };
+            return w.ShowDialog() == true ? tb.Text : null;
+        }
+
+        private void OpenFavItem(string path)
+        {
+            if (_favFiles && !System.IO.File.Exists(path)) return;
+            try { Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true }); } catch { }
+            HideFavoritesPanel();
+        }
+
+        public int AddFilesToFavorites(IEnumerable<string> files)
+        {
+            int added = 0;
+            foreach (var f in files)
+            {
+                if (string.IsNullOrWhiteSpace(f) || !System.IO.File.Exists(f)) continue;
+                if (Settings.FavoriteFiles.Any(x => string.Equals(x, f, StringComparison.OrdinalIgnoreCase))) continue;
+                Settings.FavoriteFiles.Add(f);
+                added++;
+            }
+            if (added > 0)
+            {
+                PlankConfig.Save(AppContext.BaseDirectory, _profileName, Settings);
+                if (_favHost != null && _favHost.IsVisible) RefreshFavoritesPanel();
+            }
+            return added;
+        }
+
+        // Брошенное на любую из кнопок или в панель: папки — в избранные папки, файлы — в избранные файлы.
+        // Ярлыки (.lnk) программ сюда не относятся — их место на самой панели.
+        public void AddToFavoritesRouted(IEnumerable<string> paths)
+        {
+            var list = paths.ToList();
+            AddFoldersToFavorites(list.Where(System.IO.Directory.Exists));
+            if (Settings.EnableFavoriteFiles) AddFilesToFavorites(list.Where(System.IO.File.Exists));
         }
 
         private static bool IsExplorerApp(DockAppConfig? app) =>
@@ -651,7 +893,7 @@ namespace PlankWin
             if (_activeIconMenu != null) _activeIconMenu.IsOpen = false;
         }
 
-                // Обернуть панель в Grid с зонами-хватами по краям и углам (свой ресайз).
+        // Обернуть панель в Grid с зонами-хватами по краям и углам (свой ресайз).
         private Grid BuildHostWithGrips(UIElement inner)
         {
             var g = new Grid();
@@ -726,7 +968,7 @@ namespace PlankWin
             parent.Children.Add(grip);
         }
 
-                private void PositionFavHost()
+        private void PositionFavHost()
         {
             if (_favButton == null || _favHost == null) return;
             try

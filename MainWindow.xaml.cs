@@ -366,7 +366,7 @@ namespace PlankWin
 
             PlankConfig.Save(AppContext.BaseDirectory, _profileName, Settings);
 
-            if (e.PropertyName == nameof(DockSettings.EnableFavorites))
+            if (e.PropertyName == nameof(DockSettings.EnableFavorites) || e.PropertyName == nameof(DockSettings.EnableFavoriteFiles))
                 ApplyFavoritesButton();
 
             if (e.PropertyName == nameof(DockSettings.UseAccentShadow) || e.PropertyName == nameof(DockSettings.AccentIntensity))
@@ -978,14 +978,12 @@ namespace PlankWin
         // Сохранить позицию избранного, чтобы она не терялась при перезапуске.
         private void UpdateFavoritesIndex()
         {
-            var fav = Apps.FirstOrDefault(a => a.IsFavorites);
-            if (fav == null) return;
-            int fi = Apps.IndexOf(fav);
-            if (fi >= 0 && Settings.FavoritesIndex != fi)
-            {
-                Settings.FavoritesIndex = fi;
-                PlankConfig.Save(AppContext.BaseDirectory, _profileName, Settings);
-            }
+            bool changed = false;
+            var fav = Apps.FirstOrDefault(a => a.IsFavorites && !a.IsFavFiles);
+            if (fav != null && Apps.IndexOf(fav) is int fi && fi >= 0 && Settings.FavoritesIndex != fi) { Settings.FavoritesIndex = fi; changed = true; }
+            var ff = Apps.FirstOrDefault(a => a.IsFavFiles);
+            if (ff != null && Apps.IndexOf(ff) is int fj && fj >= 0 && Settings.FavFilesIndex != fj) { Settings.FavFilesIndex = fj; changed = true; }
+            if (changed) PlankConfig.Save(AppContext.BaseDirectory, _profileName, Settings);
         }
 
         // Запуск закреплённого PWA: chrome.exe --app-id=<id> --profile-directory=<profile>.
@@ -1871,9 +1869,10 @@ namespace PlankWin
             if (sender is Button btn && btn.DataContext is DockAppConfig app && app.IsFavorites
                 && e.Data.GetDataPresent(DataFormats.FileDrop))
             {
-                bool hasFolder = e.Data.GetData(DataFormats.FileDrop) is string[] files
-                    && files.Any(f => System.IO.Directory.Exists(f));
-                if (hasFolder)
+                // Звезда и кнопка файлов принимают и папки, и файлы (раскладываем по своим спискам).
+                bool any = e.Data.GetData(DataFormats.FileDrop) is string[] files
+                    && files.Any(f => System.IO.Directory.Exists(f) || System.IO.File.Exists(f));
+                if (any)
                     btn.Effect = new DropShadowEffect { Color = Colors.Gold, BlurRadius = 22, ShadowDepth = 0, Opacity = 1.0 };
             }
         }
@@ -1898,18 +1897,7 @@ namespace PlankWin
                 {
                     if (fe is Button fb) fb.Effect = null;
                     if (e.Data.GetData(DataFormats.FileDrop) is string[] favFiles)
-                    {
-                        bool added = false;
-                        foreach (var f in favFiles)
-                        {
-                            if (System.IO.Directory.Exists(f) && !Settings.FavoriteFolders.Contains(f))
-                            {
-                                Settings.FavoriteFolders.Add(f);
-                                added = true;
-                            }
-                        }
-                        if (added) PlankConfig.Save(AppContext.BaseDirectory, _profileName, Settings);
-                    }
+                        AddToFavoritesRouted(favFiles); // папки -> избранные папки, файлы -> избранные файлы
                     e.Handled = true;
                     return;
                 }

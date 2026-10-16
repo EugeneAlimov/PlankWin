@@ -29,6 +29,9 @@ namespace PlankWin
         // Список процессов, которые не должны появляться в доке
         public System.Collections.ObjectModel.ObservableCollection<string> IgnoreProcessNames { get; set; } = new();
         public System.Collections.ObjectModel.ObservableCollection<string> FavoriteFolders { get; set; } = new();
+        public System.Collections.ObjectModel.ObservableCollection<string> FavoriteFiles { get; set; } = new();
+        // Свои имена избранных файлов для панели (путь -> имя). Сам файл не переименовывается.
+        public Dictionary<string, string> FavoriteFileNames { get; set; } = new();
 
         private bool _runAtStartup = false;
         public bool RunAtStartup
@@ -320,6 +323,21 @@ namespace PlankWin
         {
             get => _followWindowsColor;
             set { if (_followWindowsColor != value) { _followWindowsColor = value; OnPropertyChanged(); } }
+        }
+
+        // Избранные файлы: отдельная кнопка (иконка-документ) рядом со звездой.
+        private bool _enableFavoriteFiles = false;
+        public bool EnableFavoriteFiles
+        {
+            get => _enableFavoriteFiles;
+            set { if (_enableFavoriteFiles != value) { _enableFavoriteFiles = value; OnPropertyChanged(); } }
+        }
+
+        private int _favFilesIndex = 1;
+        public int FavFilesIndex
+        {
+            get => _favFilesIndex;
+            set { if (_favFilesIndex != value) { _favFilesIndex = value; OnPropertyChanged(); } }
         }
 
         public int FavoritesIndex

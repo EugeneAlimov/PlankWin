@@ -162,6 +162,15 @@ namespace PlankWin
             set { if (_edgePushProgress == value) return; _edgePushProgress = value; OnPropertyChanged(); }
         }
 
+        // Кнопка «Избранные файлы» — тоже IsFavorites (все исключения для звезды действуют), но со своей панелью.
+        private bool _isFavFiles = false;
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool IsFavFiles
+        {
+            get => _isFavFiles;
+            set { if (_isFavFiles != value) { _isFavFiles = value; OnPropertyChanged(); } }
+        }
+
         private bool _isFavorites = false;
         [System.Text.Json.Serialization.JsonIgnore]
         public bool IsFavorites

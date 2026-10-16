@@ -89,7 +89,7 @@ namespace PlankWin
         {
             if (digit == 0)
             {
-                var fav = Apps.FirstOrDefault(a => a.IsFavorites);
+                var fav = Apps.FirstOrDefault(a => a.IsFavorites && !a.IsFavFiles);
                 if (fav == null) return;
                 ShowDock("hotkey");
                 // Панель избранного позиционируется от кнопки — ждём, пока док выедет.

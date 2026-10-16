@@ -155,7 +155,7 @@ namespace PlankWin
         [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
         private static extern int AssocQueryString(int flags, int str, string pszAssoc, string? pszExtra, StringBuilder? pszOut, ref uint pcchOut);
 
-        private static string? GetAssocExe(string ext)
+        internal static string? GetAssocExe(string ext)
         {
             try
             {
