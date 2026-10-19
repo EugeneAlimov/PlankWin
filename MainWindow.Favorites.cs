@@ -142,11 +142,17 @@ namespace PlankWin
                     if (wantFiles == _favFiles) return;   // уже открыта нужная
                     HideFavoritesPanel();                 // открыта соседняя — переключаемся
                 }
-                ShowFavoritesPanel(_favPendingButton);
+                ShowFavoritesPanel(_favPendingButton, activate: false);
             };
         }
 
-        private void ShowFavoritesPanel(Button btn)
+        // activate=false — открытие по наведению. Наведение не даёт процессу права на передний план:
+        // Windows активирует окно и тут же отбирает активацию обратно, Deactivated закрывал панель ещё
+        // невидимой (Opacity 0) — выглядело как «не открывается с первого раза». По наведению окно
+        // показываем без активации, закрытие — по уходу курсора; активируется оно при клике внутри.
+        private int _favShownTick;
+
+        private void ShowFavoritesPanel(Button btn, bool activate = true)
         {
             HidePreview(); // взаимоисключение: избранное и превью не показываются одновременно
             _favButton = btn;
@@ -208,9 +214,11 @@ namespace PlankWin
                 Width = isGrid ? Settings.FavGridWidth : Settings.FavListWidth,
                 Height = isGrid ? Settings.FavGridHeight : Settings.FavListHeight,
                 MinWidth = 160,
-                MinHeight = 120
+                MinHeight = 120,
+                ShowActivated = activate
             };
-            _favHost.Deactivated += (s, e) => { if (_favMenuOpen || _favDragging || _favResizing || _favDialogOpen) return; _favClosedTick = Environment.TickCount; HideFavoritesPanel(); };
+            _favShownTick = Environment.TickCount;
+            _favHost.Deactivated += (s, e) => { if (Environment.TickCount - _favShownTick < 400) return; if (_favMenuOpen || _favDragging || _favResizing || _favDialogOpen) return; _favClosedTick = Environment.TickCount; HideFavoritesPanel(); };
 
             // Показываем невидимым, ставим на место и проявляем после первой отрисовки содержимого —
             // иначе первый кадр прозрачного окна пустой и в углу экрана (моргание).
