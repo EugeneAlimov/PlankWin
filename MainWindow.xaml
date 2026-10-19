@@ -505,13 +505,14 @@
                             <DataTemplate>
                                 <Button x:Name="AppButton" Tag="{Binding}" Style="{StaticResource DockButtonStyle}" 
                                         Click="OnAppButtonClick" PreviewMouseWheel="OnAppButtonWheel" MouseEnter="OnAppButtonMouseEnter" MouseLeave="OnAppButtonMouseLeave" ClipToBounds="False"
-                                        ContextMenuOpening="OnAppButtonContextMenuOpening" ToolTipOpening="OnAppButtonToolTipOpening"
+                                        ContextMenuOpening="OnAppButtonContextMenuOpening"
                                         AllowDrop="True" PreviewMouseLeftButtonDown="OnIconMouseLeftButtonDown"
                                         PreviewMouseMove="OnIconMouseMove" GiveFeedback="OnIconGiveFeedback"
                                         DragOver="OnIconDragOver" Drop="OnIconDrop" DragEnter="OnIconDragEnter" DragLeave="OnIconDragLeave" 
                                         PreviewMouseUp="OnIconMouseUp" 
                                         HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
 
+                                    <ToolTipService.ShowDuration>5000</ToolTipService.ShowDuration>
                                     <Button.ToolTip>
                                         <ToolTip Content="{Binding Name}"/>
                                     </Button.ToolTip>
