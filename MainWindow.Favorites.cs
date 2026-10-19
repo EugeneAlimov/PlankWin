@@ -140,6 +140,20 @@ namespace PlankWin
             catch { return false; }
         }
 
+        // Подсказка кнопки, всплывшая до панели, оказывается под ней (панель — более позднее topmost-окно).
+        // Поднимаем окно подсказки наверх без активации; доживает свои 5 секунд поверх панели.
+        private static void RaiseTooltipAbove(FrameworkElement owner)
+        {
+            try
+            {
+                if (owner.ToolTip is not ToolTip tt || !tt.IsOpen) return;
+                if (PresentationSource.FromVisual(tt) is not HwndSource src) return;
+                Win32Helper.SetWindowPos(src.Handle, Win32Helper.HWND_TOPMOST, 0, 0, 0, 0,
+                    Win32Helper.SWP_NOMOVE | Win32Helper.SWP_NOSIZE | Win32Helper.SWP_NOACTIVATE);
+            }
+            catch { }
+        }
+
         private void HideFavoritesSoon()
         {
             FavLog.W($"HideSoon from {FavLog.Caller()} {FavState()}");
@@ -298,7 +312,7 @@ namespace PlankWin
             PositionFavHost();
             FavLog.W($"SHOW done visible={_favHost.IsVisible} pos=({_favHost.Left:0},{_favHost.Top:0}) size=({_favHost.Width:0}x{_favHost.Height:0}) fg={Win32Helper.GetForegroundWindow()} me={new System.Windows.Interop.WindowInteropHelper(_favHost).Handle}");
             var hostRef = _favHost;
-            _favHost.Dispatcher.BeginInvoke(new Action(() => { FavLog.W($"Opacity->1 sameHost={hostRef == _favHost}"); if (hostRef == _favHost && hostRef != null) hostRef.Opacity = 1; }),
+            _favHost.Dispatcher.BeginInvoke(new Action(() => { FavLog.W($"Opacity->1 sameHost={hostRef == _favHost} tipOpen={(btn.ToolTip as ToolTip)?.IsOpen}"); if (hostRef == _favHost && hostRef != null) { hostRef.Opacity = 1; RaiseTooltipAbove(btn); } }),
                 DispatcherPriority.Render);
 
             // Появление: scale (с ~85%) + fade.
