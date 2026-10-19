@@ -505,7 +505,7 @@
                             <DataTemplate>
                                 <Button x:Name="AppButton" Tag="{Binding}" Style="{StaticResource DockButtonStyle}" 
                                         Click="OnAppButtonClick" PreviewMouseWheel="OnAppButtonWheel" MouseEnter="OnAppButtonMouseEnter" MouseLeave="OnAppButtonMouseLeave" ClipToBounds="False"
-                                        ContextMenuOpening="OnAppButtonContextMenuOpening"
+                                        ContextMenuOpening="OnAppButtonContextMenuOpening" ToolTipOpening="OnAppButtonToolTipOpening"
                                         AllowDrop="True" PreviewMouseLeftButtonDown="OnIconMouseLeftButtonDown"
                                         PreviewMouseMove="OnIconMouseMove" GiveFeedback="OnIconGiveFeedback"
                                         DragOver="OnIconDragOver" Drop="OnIconDrop" DragEnter="OnIconDragEnter" DragLeave="OnIconDragLeave" 

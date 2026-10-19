@@ -110,6 +110,13 @@ namespace PlankWin
             return new SuppressedTip { El = fe };
         }
 
+        // Страховка: пока открыта панель избранного, подсказки кнопок дока не всплывают вовсе
+        // (подсказка, успевшая открыться позже панели или на соседней кнопке, висела поверх панели).
+        private void OnAppButtonToolTipOpening(object sender, ToolTipEventArgs e)
+        {
+            if (_favHost != null && _favHost.IsVisible) e.Handled = true;
+        }
+
         private static void RestoreTooltip(ref SuppressedTip? st)
         {
             if (st == null) return;
