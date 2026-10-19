@@ -187,6 +187,8 @@ namespace PlankWin
             catch (Exception ex) { FavLog.W($"Raise[{why}] error {ex.Message}"); }
         }
 
+        private void OnFavHostZChanged(Button btn) { FavLog.W("Panel Z changed -> re-raise tip"); RaiseTooltipAbove(btn, "panel-z"); }
+
         private void HideFavoritesSoon()
         {
             FavLog.W($"HideSoon from {FavLog.Caller()} {FavState()}");
@@ -345,6 +347,26 @@ namespace PlankWin
             PositionFavHost();
             _dbgFavHwnd = new System.Windows.Interop.WindowInteropHelper(_favHost).Handle;
             FavLog.W($"SHOW done visible={_favHost.IsVisible} pos=({_favHost.Left:0},{_favHost.Top:0}) size=({_favHost.Width:0}x{_favHost.Height:0}) fg={Win32Helper.GetForegroundWindow()} me={new System.Windows.Interop.WindowInteropHelper(_favHost).Handle}");
+            // Панель уже после показа ещё раз поднимается наверх (WPF/DWM досинхронизирует topmost
+            // в первые ~150 мс) и снова накрывает подсказку. Ловим каждое изменение её Z-порядка
+            // и возвращаем открытую подсказку кнопки поверх.
+            try
+            {
+                var favSrc = HwndSource.FromHwnd(new WindowInteropHelper(_favHost).Handle);
+                favSrc?.AddHook((IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled) =>
+                {
+                    const int WM_WINDOWPOSCHANGED = 0x0047;
+                    const int SWP_NOZORDER = 0x0004;
+                    if (msg == WM_WINDOWPOSCHANGED && lParam != IntPtr.Zero)
+                    {
+                        int flags = System.Runtime.InteropServices.Marshal.ReadInt32(lParam, IntPtr.Size * 2 + 16);
+                        if ((flags & SWP_NOZORDER) == 0)
+                            Dispatcher.BeginInvoke(new Action(() => OnFavHostZChanged(btn)), DispatcherPriority.Send);
+                    }
+                    return IntPtr.Zero;
+                });
+            }
+            catch { }
             var hostRef = _favHost;
             _favHost.Dispatcher.BeginInvoke(new Action(() => { FavLog.W($"Opacity->1 sameHost={hostRef == _favHost} tipOpen={(btn.ToolTip as ToolTip)?.IsOpen}"); if (hostRef == _favHost && hostRef != null) { hostRef.Opacity = 1; RaiseTooltipAbove(btn, "panel-shown"); Dispatcher.BeginInvoke(new Action(() => RaiseTooltipAbove(btn, "panel-idle")), DispatcherPriority.ApplicationIdle);
                     foreach (var ms in new[] { 150, 400, 1000 })
