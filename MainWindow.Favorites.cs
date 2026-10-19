@@ -142,10 +142,22 @@ namespace PlankWin
 
         // Подсказка кнопки, всплывшая до панели, оказывается под ней (панель — более позднее topmost-окно).
         // Поднимаем окно подсказки наверх без активации; доживает свои 5 секунд поверх панели.
-        private static void RaiseTooltipAbove(FrameworkElement owner)
+        private static void RaiseTooltipAbove(FrameworkElement owner, string why = "?")
         {
-            if (owner.ToolTip is ToolTip tt) RaiseTooltipWindow(tt);
+            if (owner.ToolTip is ToolTip tt) RaiseTooltipWindow(tt, why);
+            else FavLog.W($"Raise[{why}] owner has no ToolTip object");
         }
+
+        // ОТЛАДКА: место окна в Z-порядке (0 = самое верхнее) среди всех окон верхнего уровня.
+        internal static IntPtr _dbgFavHwnd;
+        private static string ZInfo(IntPtr tip)
+        {
+            int i = 0, tipZ = -1, favZ = -1;
+            Win32Helper.EnumWindows((h, l) => { if (h == tip) tipZ = i; if (h == _dbgFavHwnd) favZ = i; i++; return true; }, IntPtr.Zero);
+            string rel = tipZ < 0 || favZ < 0 ? "n/a" : (tipZ < favZ ? "TIP ABOVE panel" : "TIP UNDER panel");
+            return $"tip={tip} tipZ={tipZ} fav={_dbgFavHwnd} favZ={favZ} => {rel}";
+        }
+        private static IntPtr TipHwnd(ToolTip tt) => PresentationSource.FromVisual(tt) is HwndSource s ? s.Handle : IntPtr.Zero;
 
         // Любая открывшаяся подсказка кнопки дока — поверх всего, в т.ч. панели избранного.
         // WPF переиспользует окно подсказки и при повторном показе не поднимает его по Z,
@@ -153,20 +165,26 @@ namespace PlankWin
         private void OnDockToolTipOpened(object sender, RoutedEventArgs e)
         {
             if (sender is not ToolTip tt) return;
-            RaiseTooltipWindow(tt);
-            Dispatcher.BeginInvoke(new Action(() => RaiseTooltipWindow(tt)), DispatcherPriority.ApplicationIdle);
+            FavLog.W($"Tip OPENED '{tt.Content}' {ZInfo(TipHwnd(tt))}");
+            tt.Closed -= DbgTipClosed; tt.Closed += DbgTipClosed;
+            RaiseTooltipWindow(tt, "opened");
+            Dispatcher.BeginInvoke(new Action(() => RaiseTooltipWindow(tt, "opened-idle")), DispatcherPriority.ApplicationIdle);
         }
 
-        private static void RaiseTooltipWindow(ToolTip tt)
+        private static void DbgTipClosed(object? s, RoutedEventArgs e) { if (s is ToolTip t) FavLog.W($"Tip CLOSED '{t.Content}'"); }
+
+        private static void RaiseTooltipWindow(ToolTip tt, string why = "?")
         {
             try
             {
-                if (!tt.IsOpen) return;
-                if (PresentationSource.FromVisual(tt) is not HwndSource src) return;
-                Win32Helper.SetWindowPos(src.Handle, Win32Helper.HWND_TOPMOST, 0, 0, 0, 0,
+                if (!tt.IsOpen) { FavLog.W($"Raise[{why}] '{tt.Content}' skipped: not open"); return; }
+                if (PresentationSource.FromVisual(tt) is not HwndSource src) { FavLog.W($"Raise[{why}] '{tt.Content}' skipped: no HwndSource"); return; }
+                string before = ZInfo(src.Handle);
+                bool ok = Win32Helper.SetWindowPos(src.Handle, Win32Helper.HWND_TOPMOST, 0, 0, 0, 0,
                     Win32Helper.SWP_NOMOVE | Win32Helper.SWP_NOSIZE | Win32Helper.SWP_NOACTIVATE);
+                FavLog.W($"Raise[{why}] '{tt.Content}' ok={ok} err={System.Runtime.InteropServices.Marshal.GetLastWin32Error()} before: {before} | after: {ZInfo(src.Handle)}");
             }
-            catch { }
+            catch (Exception ex) { FavLog.W($"Raise[{why}] error {ex.Message}"); }
         }
 
         private void HideFavoritesSoon()
@@ -325,9 +343,16 @@ namespace PlankWin
             _favHost.Opacity = 0;
             _favHost.Show();
             PositionFavHost();
+            _dbgFavHwnd = new System.Windows.Interop.WindowInteropHelper(_favHost).Handle;
             FavLog.W($"SHOW done visible={_favHost.IsVisible} pos=({_favHost.Left:0},{_favHost.Top:0}) size=({_favHost.Width:0}x{_favHost.Height:0}) fg={Win32Helper.GetForegroundWindow()} me={new System.Windows.Interop.WindowInteropHelper(_favHost).Handle}");
             var hostRef = _favHost;
-            _favHost.Dispatcher.BeginInvoke(new Action(() => { FavLog.W($"Opacity->1 sameHost={hostRef == _favHost} tipOpen={(btn.ToolTip as ToolTip)?.IsOpen}"); if (hostRef == _favHost && hostRef != null) { hostRef.Opacity = 1; RaiseTooltipAbove(btn); Dispatcher.BeginInvoke(new Action(() => RaiseTooltipAbove(btn)), DispatcherPriority.ApplicationIdle); } }),
+            _favHost.Dispatcher.BeginInvoke(new Action(() => { FavLog.W($"Opacity->1 sameHost={hostRef == _favHost} tipOpen={(btn.ToolTip as ToolTip)?.IsOpen}"); if (hostRef == _favHost && hostRef != null) { hostRef.Opacity = 1; RaiseTooltipAbove(btn, "panel-shown"); Dispatcher.BeginInvoke(new Action(() => RaiseTooltipAbove(btn, "panel-idle")), DispatcherPriority.ApplicationIdle);
+                    foreach (var ms in new[] { 150, 400, 1000 })
+                    {
+                        var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ms) };
+                        t.Tick += (s2, e2) => { t.Stop(); if (btn.ToolTip is ToolTip tt2 && tt2.IsOpen) FavLog.W($"Check +{ms}ms '{tt2.Content}' {ZInfo(TipHwnd(tt2))}"); else FavLog.W($"Check +{ms}ms tip closed"); };
+                        t.Start();
+                    } } }),
                 DispatcherPriority.Render);
 
             // Появление: scale (с ~85%) + fade.
