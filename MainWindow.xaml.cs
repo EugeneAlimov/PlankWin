@@ -2039,13 +2039,40 @@ namespace PlankWin
         private PlankWin.Win32Helper.LowLevelMouseProc? _scrollProc;
         private IntPtr _scrollHookID = IntPtr.Zero;
 
+        // Хук живёт в ОТДЕЛЬНОМ потоке со своим циклом сообщений. Низкоуровневый хук мыши Windows
+        // вызывает в потоке, который его поставил, и ждёт ответа на КАЖДОЕ движение мыши. Пока UI-поток
+        // занят (старт, загрузка иконок, обновление), курсор у всей системы замирал. Свой поток всегда
+        // свободен; в UI уходит только сама прокрутка (BeginInvoke).
+        private System.Threading.Thread? _scrollHookThread;
+        private volatile IntPtr _favHostHwnd = IntPtr.Zero; // для хука: окно избранного (UI-объект из чужого потока трогать нельзя)
+
         private void InstallScrollHook()
         {
-            if (_scrollHookID != IntPtr.Zero) return;
-            _scrollProc = ScrollHookCallback;
-            using (var proc = System.Diagnostics.Process.GetCurrentProcess())
-            using (var mod = proc.MainModule!)
-                _scrollHookID = PlankWin.Win32Helper.SetWindowsHookEx(WH_MOUSE_LL, _scrollProc, PlankWin.Win32Helper.GetModuleHandle(mod.ModuleName), 0);
+            if (_scrollHookThread != null) return;
+            _scrollHookThread = new System.Threading.Thread(() =>
+            {
+                _scrollProc = ScrollHookCallback;
+                using (var proc = System.Diagnostics.Process.GetCurrentProcess())
+                using (var mod = proc.MainModule!)
+                    _scrollHookID = PlankWin.Win32Helper.SetWindowsHookEx(WH_MOUSE_LL, _scrollProc, PlankWin.Win32Helper.GetModuleHandle(mod.ModuleName), 0);
+                while (HookNative.GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
+                {
+                    HookNative.TranslateMessage(ref msg);
+                    HookNative.DispatchMessage(ref msg);
+                }
+                if (_scrollHookID != IntPtr.Zero) PlankWin.Win32Helper.UnhookWindowsHookEx(_scrollHookID);
+            })
+            { IsBackground = true, Name = "PlankWin wheel hook" };
+            _scrollHookThread.Start();
+        }
+
+        private static class HookNative
+        {
+            [StructLayout(LayoutKind.Sequential)]
+            public struct MSG { public IntPtr hwnd; public uint message; public IntPtr wParam; public IntPtr lParam; public uint time; public int ptX; public int ptY; }
+            [DllImport("user32.dll")] public static extern int GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+            [DllImport("user32.dll")] public static extern bool TranslateMessage(ref MSG lpMsg);
+            [DllImport("user32.dll")] public static extern IntPtr DispatchMessage(ref MSG lpMsg);
         }
 
         private IntPtr ScrollHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
@@ -2056,8 +2083,9 @@ namespace PlankWin
                 {
                     var hs = System.Runtime.InteropServices.Marshal.PtrToStructure<PlankWin.Win32Helper.MSLLHOOKSTRUCT>(lParam);
                     // Над панелью избранного (она перекрывает прозрачную часть окна дока) колесо — её прокрутке.
-                    if (_favHost != null && _favHost.IsVisible
-                        && PlankWin.Win32Helper.GetWindowRect(new WindowInteropHelper(_favHost).Handle, out var fr)
+                    IntPtr favHwnd = _favHostHwnd;
+                    if (favHwnd != IntPtr.Zero && PlankWin.Win32Helper.IsWindowVisible(favHwnd)
+                        && PlankWin.Win32Helper.GetWindowRect(favHwnd, out var fr)
                         && hs.pt.X >= fr.Left && hs.pt.X < fr.Right && hs.pt.Y >= fr.Top && hs.pt.Y < fr.Bottom)
                         return PlankWin.Win32Helper.CallNextHookEx(_scrollHookID, nCode, wParam, lParam);
                     if (PlankWin.Win32Helper.GetWindowRect(_mainHwnd, out var wr)
