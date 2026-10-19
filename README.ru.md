@@ -23,6 +23,11 @@
   &nbsp;
   <img src="docs/settings-dark.png" height="460" alt="Dark settings">
 </p>
+<p align="center">
+  <img src="docs/preview-dark.png" height="460" alt="Window previews, dark theme">
+  &nbsp;
+  <img src="docs/favorites-dark.png" height="460" alt="Favorites, dark theme">
+</p>
 
 ## Возможности
 
