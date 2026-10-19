@@ -92,6 +92,10 @@ namespace PlankWin
 
         private void HideFavoritesSoon()
         {
+            // Закрывать нечего — не заводим таймер: иначе он «доживает» и закрывает панель,
+            // открытую следом наведением на соседнюю кнопку (уход с «Файлов» -> звезда -> панель
+            // открылась и через ~100 мс закрылась этим старым таймером).
+            if (_favHost == null) return;
             EnsureFavHideTimer();
             _favHideTimer!.Stop();
             _favHideTimer.Start();
@@ -154,6 +158,7 @@ namespace PlankWin
 
         private void ShowFavoritesPanel(Button btn, bool activate = true)
         {
+            _favHideTimer?.Stop(); // отложенное закрытие относится к прежней панели, новую оно трогать не должно
             HidePreview(); // взаимоисключение: избранное и превью не показываются одновременно
             _favButton = btn;
             _favFiles = btn.Tag is DockAppConfig fd && fd.IsFavFiles;
