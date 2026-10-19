@@ -1826,10 +1826,67 @@ namespace PlankWin
                     }
                 }
             }
+            else if (sender is Button ob && OpenWithFiles(ob, e.Data) != null)
+            {
+                // Документ/папка над кнопкой программы — «открыть этой программой».
+                e.Effects = DragDropEffects.Copy;
+                e.Handled = true;
+            }
             else if (HasValidExecutable(e.Data))
             {
                 ProcessExternalDrag(e);
             }
+        }
+
+        // ===== Открыть файл программой: бросить документ на её иконку (как в Plank/macOS) =====
+        private Button? _openWithGlowBtn;
+
+        // Файлы для «открыть этой программой», либо null, если бросок сюда не про это:
+        // exe/lnk/url — это закрепление; звезда, UWP, PWA и игры из лаунчеров файл не примут.
+        private string[]? OpenWithFiles(Button btn, IDataObject data)
+        {
+            if (_isDragging) return null;
+            if (btn.DataContext is not DockAppConfig app || app.IsFavorites || app.IsPlaceholder) return null;
+            if (!data.GetDataPresent(DataFormats.FileDrop) || HasValidExecutable(data)) return null;
+            if (data.GetData(DataFormats.FileDrop) is not string[] files || files.Length == 0) return null;
+            if (OpenWithExe(app) == null) return null;
+            return files.Where(f => System.IO.File.Exists(f) || System.IO.Directory.Exists(f)).ToArray() is { Length: > 0 } ok ? ok : null;
+        }
+
+        private string? OpenWithExe(DockAppConfig app)
+        {
+            if (app.IsPackaged || !string.IsNullOrEmpty(app.LaunchUri) || string.IsNullOrEmpty(app.Path)) return null;
+            if (TryGetPwaLaunch(app.Path, out _, out _)) return null;
+            string exe = ResolveLaunchPath(app.Path);
+            return exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(exe) ? exe : null;
+        }
+
+        private void OpenFilesWith(DockAppConfig app, string[] files, Button btn)
+        {
+            string? exe = OpenWithExe(app);
+            if (exe == null) return;
+            try
+            {
+                string args = string.Join(" ", files.Select(f => "\"" + f.TrimEnd('\\') + "\""));
+                if (!string.IsNullOrWhiteSpace(app.Arguments)) args = app.Arguments + " " + args;
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = exe,
+                    Arguments = args,
+                    UseShellExecute = true,
+                    WorkingDirectory = System.IO.Path.GetDirectoryName(exe) ?? string.Empty
+                });
+                AnimateLaunchBounce(btn);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"{Loc.T("err_launch")}\n{ex.Message}", "PlankWin", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void ClearOpenWithGlow()
+        {
+            if (_openWithGlowBtn != null) { _openWithGlowBtn.Effect = null; _openWithGlowBtn = null; }
         }
 
         private void OnWindowDragOver(object sender, DragEventArgs e)
@@ -1873,6 +1930,13 @@ namespace PlankWin
 
         private void OnIconDragEnter(object sender, DragEventArgs e)
         {
+            if (sender is Button owb && OpenWithFiles(owb, e.Data) != null)
+            {
+                ClearOpenWithGlow();
+                owb.Effect = new DropShadowEffect { Color = Color.FromRgb(0x4F, 0xC3, 0xF7), BlurRadius = 22, ShadowDepth = 0, Opacity = 1.0 };
+                _openWithGlowBtn = owb;
+                return;
+            }
             if (sender is Button btn && btn.DataContext is DockAppConfig app && app.IsFavorites
                 && e.Data.GetDataPresent(DataFormats.FileDrop))
             {
@@ -1886,6 +1950,7 @@ namespace PlankWin
 
         private void OnIconDragLeave(object sender, DragEventArgs e)
         {
+            if (ReferenceEquals(sender, _openWithGlowBtn)) ClearOpenWithGlow();
             if (sender is Button btn && btn.DataContext is DockAppConfig app && app.IsFavorites)
                 btn.Effect = null;
         }
@@ -1905,6 +1970,13 @@ namespace PlankWin
                     if (fe is Button fb) fb.Effect = null;
                     if (e.Data.GetData(DataFormats.FileDrop) is string[] favFiles)
                         AddToFavoritesRouted(favFiles); // папки -> избранные папки, файлы -> избранные файлы
+                    e.Handled = true;
+                    return;
+                }
+                if (sender is Button owb && owb.DataContext is DockAppConfig owApp && OpenWithFiles(owb, e.Data) is string[] owFiles)
+                {
+                    ClearOpenWithGlow();
+                    OpenFilesWith(owApp, owFiles, owb);
                     e.Handled = true;
                     return;
                 }
