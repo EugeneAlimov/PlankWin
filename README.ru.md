@@ -15,6 +15,8 @@
   <img src="docs/preview.png" height="460" alt="Window previews">
   &nbsp;
   <img src="docs/recent.png" height="460" alt="Recent files and tasks">
+  &nbsp;
+  <img src="docs/settings.png" height="460" alt="Settings">
 </p>
 
 ## Возможности
