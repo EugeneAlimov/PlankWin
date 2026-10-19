@@ -6,7 +6,8 @@ A dock for Windows 10/11, inspired by Plank. Pinned apps and running windows in 
 
 ## Features
 
-- **Dock** on any screen edge, per monitor. Always visible, auto-hide or smart hide. Smooth animations, running indicators, overflow scrolling when icons don't fit.
+- **Dock** on any screen edge. Always visible, auto-hide or smart hide. Smooth animations, running indicators, overflow scrolling when icons don't fit.
+- **Multiple monitors**: a separate panel on each screen with its own settings, showing only the windows on that screen — like the taskbar on every display. Each panel can be switched off from the tray; hotkeys act on the panel under the cursor.
 - **Window previews** on hover: live thumbnails, Aero Peek, close buttons, list or grid layout.
 - **Recent & tasks** in the right-click menu: jump lists of any app (the same files the taskbar shows), Office recent documents, TIA Portal recent projects, app tasks like "New private window". Pin items to the top.
 - **Favorites**: a star button for folders and a separate one for files. Drag & drop to add, rename for the dock without touching the file, copy items or paste the clipboard straight into a favorite folder.
