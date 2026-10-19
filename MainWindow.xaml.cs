@@ -61,6 +61,10 @@ namespace PlankWin
 
         private Point _dragStartPoint;
         private bool _isDragging = false;
+        // Кнопка, на которой реально было нажатие ЛКМ. Клик, закрывающий контекстное меню, съедает popup,
+        // и PreviewMouseLeftButtonDown до кнопки не доходит — без этой проверки MouseMove сравнивал бы
+        // курсор со старой точкой от предыдущего клика и сразу начинал перетаскивание (кнопка «дёргалась»).
+        private object? _dragSource;
         private readonly DragGhost _dragGhost = new DragGhost();
         private DateTime _lastSwapTime = DateTime.MinValue;
         private DockAppConfig? _placeholderApp;
@@ -741,7 +745,8 @@ namespace PlankWin
 
         private void OnIconMouseMove(object sender, MouseEventArgs e)
         {
-            if (e.LeftButton == MouseButtonState.Pressed && !_isDragging)
+            if (e.LeftButton != MouseButtonState.Pressed) { _dragSource = null; return; }
+            if (!_isDragging && ReferenceEquals(_dragSource, sender))
             {
                 Point currentPos = e.GetPosition(this);
                 Vector diff = _dragStartPoint - currentPos;
@@ -789,6 +794,7 @@ namespace PlankWin
                         {
                             btn.Opacity = 1.0;
                             _isDragging = false;
+                            _dragSource = null;
                             _draggedApp = null;
                             CleanupExternalDrag();
                         }
@@ -1411,6 +1417,7 @@ namespace PlankWin
         {
             _dragStartPoint = e.GetPosition(this);
             _isDragging = false;
+            _dragSource = _openContextMenusCount > 0 ? null : sender;
         }
 
         private void CreateDragGhost(DockAppConfig app)
@@ -2183,6 +2190,7 @@ namespace PlankWin
         {
             _openContextMenusCount--;
             if (_openContextMenusCount < 0) _openContextMenusCount = 0;
+            _dragSource = null;
 
             if (sender is ContextMenu menu)
             {
