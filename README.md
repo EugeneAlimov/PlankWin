@@ -2,7 +2,7 @@
 
 A dock for Windows 10/11, inspired by Plank. Pinned apps and running windows in one panel, with live previews, jump lists, favorites and a few things the taskbar never learned.
 
-**[Download the latest release](https://github.com/EugeneAlimov/PlankWin/releases/latest)** · [Русская версия](README.ru.md)
+**[Download the latest release](https://github.com/EugeneAlimov/PlankWin/releases/latest)** · [User manual (Russian)](docs/MANUAL.ru.md) · [Русская версия](README.ru.md)
 
 <p align="center">
   <img src="docs/dock.png" height="460" alt="Dock">
