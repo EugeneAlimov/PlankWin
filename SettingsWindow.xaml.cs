@@ -283,6 +283,8 @@ namespace PlankWin
                         }
 
                         PlankConfig.Save(AppContext.BaseDirectory, _profileName, settings);
+                        // Применить сразу: убрать/вернуть кнопку программы на панели.
+                        (Owner as MainWindow)?.ApplyExclusions();
                     }
                 };
                 tempList.Add(item);

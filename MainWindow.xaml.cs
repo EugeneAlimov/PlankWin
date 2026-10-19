@@ -2228,11 +2228,14 @@ namespace PlankWin
                         PlankConfig.Save(AppContext.BaseDirectory, _profileName, Settings);
                     }
 
+                    bool wasPinned = !app.IsDynamic;
                     app.IsDeleting = true;
                     PositionDock(skipAnimation: false);
 
                     await AnimateItemContainerAsync(app, targetSize: 0, animateOpacity: true, durationMs: 350);
                     Apps.Remove(app);
+                    // Закреплённая кнопка иначе вернулась бы после перезапуска.
+                    if (wasPinned) SaveAppsConfig();
                 }
             }
             if (_activeIconMenu != null) _activeIconMenu.IsOpen = false;
