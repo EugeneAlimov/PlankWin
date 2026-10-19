@@ -514,7 +514,7 @@
 
                                     <ToolTipService.ShowDuration>5000</ToolTipService.ShowDuration>
                                     <Button.ToolTip>
-                                        <ToolTip Content="{Binding Name}"/>
+                                        <ToolTip Content="{Binding Name}" Opened="OnDockToolTipOpened"/>
                                     </Button.ToolTip>
                                     <Button.ContextMenu>
                                         <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"

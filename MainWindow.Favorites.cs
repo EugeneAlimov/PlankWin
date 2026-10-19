@@ -94,9 +94,24 @@ namespace PlankWin
         // Поднимаем окно подсказки наверх без активации; доживает свои 5 секунд поверх панели.
         private static void RaiseTooltipAbove(FrameworkElement owner)
         {
+            if (owner.ToolTip is ToolTip tt) RaiseTooltipWindow(tt);
+        }
+
+        // Любая открывшаяся подсказка кнопки дока — поверх всего, в т.ч. панели избранного.
+        // WPF переиспользует окно подсказки и при повторном показе не поднимает его по Z,
+        // поэтому при переходе между кнопками избранного подсказка оказывалась под панелью.
+        private void OnDockToolTipOpened(object sender, RoutedEventArgs e)
+        {
+            if (sender is not ToolTip tt) return;
+            RaiseTooltipWindow(tt);
+            Dispatcher.BeginInvoke(new Action(() => RaiseTooltipWindow(tt)), DispatcherPriority.ApplicationIdle);
+        }
+
+        private static void RaiseTooltipWindow(ToolTip tt)
+        {
             try
             {
-                if (owner.ToolTip is not ToolTip tt || !tt.IsOpen) return;
+                if (!tt.IsOpen) return;
                 if (PresentationSource.FromVisual(tt) is not HwndSource src) return;
                 Win32Helper.SetWindowPos(src.Handle, Win32Helper.HWND_TOPMOST, 0, 0, 0, 0,
                     Win32Helper.SWP_NOMOVE | Win32Helper.SWP_NOSIZE | Win32Helper.SWP_NOACTIVATE);
@@ -253,7 +268,7 @@ namespace PlankWin
             _favHost.Show();
             PositionFavHost();
             var hostRef = _favHost;
-            _favHost.Dispatcher.BeginInvoke(new Action(() => { if (hostRef == _favHost && hostRef != null) { hostRef.Opacity = 1; RaiseTooltipAbove(btn); } }),
+            _favHost.Dispatcher.BeginInvoke(new Action(() => { if (hostRef == _favHost && hostRef != null) { hostRef.Opacity = 1; RaiseTooltipAbove(btn); Dispatcher.BeginInvoke(new Action(() => RaiseTooltipAbove(btn)), DispatcherPriority.ApplicationIdle); } }),
                 DispatcherPriority.Render);
 
             // Появление: scale (с ~85%) + fade.
