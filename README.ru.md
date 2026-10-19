@@ -11,6 +11,11 @@
   &nbsp;
   <img src="docs/favorite-files.png" height="460" alt="Favorite files">
 </p>
+<p align="center">
+  <img src="docs/preview.png" height="460" alt="Window previews">
+  &nbsp;
+  <img src="docs/recent.png" height="460" alt="Recent files and tasks">
+</p>
 
 ## Возможности
 
