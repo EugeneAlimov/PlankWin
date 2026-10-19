@@ -185,6 +185,15 @@ namespace PlankWin
                 RenderTransformOrigin = new Point(0.5, 0.5),
                 RenderTransform = scale
             };
+            // Прокрутка пропорционально дельте. Штатный ScrollViewer на КАЖДОЕ событие колеса листает
+            // фиксированные 3 строки (~48 px) независимо от дельты, а тачпад шлёт десятки мелких событий
+            // за жест — отсюда «пролетает» несколько рядов. Щелчок колеса мыши (120) даёт те же ~48 px.
+            _favScroll.PreviewMouseWheel += (s, e) =>
+            {
+                if (s is not ScrollViewer sv) return;
+                sv.ScrollToVerticalOffset(sv.VerticalOffset - e.Delta * 0.4);
+                e.Handled = true;
+            };
             rootBorder.MouseEnter += (s, e) => _favHideTimer?.Stop();
             rootBorder.MouseLeave += (s, e) => HideFavoritesSoon();
             // Перетаскивание файлов/папок прямо в открытую панель.
