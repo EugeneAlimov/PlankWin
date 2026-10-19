@@ -64,6 +64,7 @@ namespace PlankWin
             // Кнопка "Избранное" в режиме наведения — открываем панель избранного по hover.
             if (app.IsFavorites)
             {
+                FavLog.W($"Btn MouseEnter {app.Name} mode={Settings.FavoritesOpenMode} delay={Settings.PreviewDelayMs} {FavState()}");
                 // Вернулись на кнопку уже открытой панели (например, из самой панели) — отменяем отложенное
                 // закрытие, иначе панель закрывается под курсором и по наведению уже не открывается.
                 if (_favHost != null && _favHost.IsVisible && _favFiles == app.IsFavFiles) _favHideTimer?.Stop();
@@ -75,7 +76,9 @@ namespace PlankWin
                     _favHoverTimer!.Stop();
                     _favHoverTimer.Interval = TimeSpan.FromMilliseconds(Settings.PreviewDelayMs);
                     _favHoverTimer.Start();
+                    FavLog.W("  -> hover timer started");
                 }
+                else FavLog.W("  -> hover timer NOT started");
                 return;
             }
 
@@ -94,6 +97,7 @@ namespace PlankWin
         {
             if (sender is Button btn && btn.Tag is DockAppConfig app && app.IsFavorites)
             {
+                FavLog.W($"Btn MouseLeave {app.Name} {FavState()}");
                 _favHoverTimer?.Stop(); // отменить открытие, если курсор ушёл
                 if (Settings.FavoritesOpenMode == FavoritesOpenMode.Hover) HideFavoritesSoon();
                 return;

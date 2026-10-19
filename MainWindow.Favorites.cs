@@ -38,8 +38,43 @@ namespace PlankWin
         private const int FavHideDelayMs = 500;
 
         // Добавить/убрать кнопки «Избранное» (звезда, папки) и «Избранные файлы» по настройкам (на лету).
+        // ОТЛАДКА: раз в 250 мс смотрим, не стоит ли курсор над кнопкой избранного, а панель при этом
+        // закрыта и таймер наведения не идёт — ровно тот случай «навёл, а не открылось».
+        private DispatcherTimer? _favWatch;
+        private int _favWatchLastLog;
+        private void StartFavWatch()
+        {
+            if (_favWatch != null) return;
+            FavLog.W($"===== PlankWin {typeof(MainWindow).Assembly.GetName().Version} watch started, profile={_profileName}");
+            _favWatch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+            _favWatch.Tick += (s, e) =>
+            {
+                try
+                {
+                    Win32Helper.GetCursorPos(out var pt);
+                    foreach (var app in Apps.Where(a => a.IsFavorites).ToList())
+                    {
+                        if (FindAppButton(app) is not Button b || !b.IsVisible) continue;
+                        var tl = b.PointToScreen(new Point(0, 0));
+                        var br = b.PointToScreen(new Point(b.ActualWidth, b.ActualHeight));
+                        bool geo = pt.X >= tl.X && pt.X < br.X && pt.Y >= tl.Y && pt.Y < br.Y;
+                        if (!geo && !b.IsMouseOver) continue;
+                        bool open = _favHost != null && _favHost.IsVisible && _favFiles == app.IsFavFiles;
+                        bool waiting = _favHoverTimer?.IsEnabled == true;
+                        if (open || waiting) continue;
+                        if (Environment.TickCount - _favWatchLastLog < 1000) continue;
+                        _favWatchLastLog = Environment.TickCount;
+                        FavLog.W($"!! STUCK? cursor over {app.Name}: geo={geo} wpfMouseOver={b.IsMouseOver} capture={Mouse.Captured?.GetType().Name ?? "none"} ctxMenu={_contextMenuOpen} fg={Win32Helper.GetForegroundWindow()} {FavState()}");
+                    }
+                }
+                catch (Exception ex) { FavLog.W("watch error: " + ex.Message); }
+            };
+            _favWatch.Start();
+        }
+
         public void ApplyFavoritesButton()
         {
+            StartFavWatch();
             ApplyFavButton(files: false, Settings.EnableFavorites, Settings.FavoritesIndex, Loc.T("fav_folders_title"));
             ApplyFavButton(files: true, Settings.EnableFavoriteFiles, Settings.FavFilesIndex, Loc.T("fav_files_title"));
         }
@@ -70,8 +105,11 @@ namespace PlankWin
         }
 
         // Клик по звезде: флип-флоп открыть/закрыть.
+        private string FavState() => $"host={(_favHost==null?"null":(_favHost.IsVisible?"visible":"hidden"))} files={_favFiles} menu={_favMenuOpen} drag={_favDragging} resize={_favResizing} dlg={_favDialogOpen} hideT={_favHideTimer?.IsEnabled} hoverT={_favHoverTimer?.IsEnabled}";
+
         private void ToggleFavoritesPanel(Button btn)
         {
+            FavLog.W($"Toggle: btn={(btn.Tag as DockAppConfig)?.Name} sinceClose={Environment.TickCount - _favClosedTick}ms {FavState()}");
             // Если панель только что закрылась этим же кликом (Deactivated) — не открываем снова.
             if (Environment.TickCount - _favClosedTick < 250) return;
             bool wantFiles = btn.Tag is DockAppConfig d && d.IsFavFiles;
@@ -87,11 +125,24 @@ namespace PlankWin
         {
             if (_favHideTimer != null) return;
             _favHideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(FavHideDelayMs) };
-            _favHideTimer.Tick += (s, e) => { _favHideTimer!.Stop(); if (_favDialogOpen) return; HideFavoritesPanel(); };
+            _favHideTimer.Tick += (s, e) => { _favHideTimer!.Stop(); FavLog.W($"HideTimer TICK {FavState()} cursorOverPanel={IsCursorOverFavHost()}"); if (_favDialogOpen) return; HideFavoritesPanel(); };
+        }
+
+        private bool IsCursorOverFavHost()
+        {
+            try
+            {
+                if (_favHost == null) return false;
+                var h = new System.Windows.Interop.WindowInteropHelper(_favHost).Handle;
+                Win32Helper.GetCursorPos(out var pt);
+                return Win32Helper.GetWindowRect(h, out var r) && pt.X >= r.Left && pt.X < r.Right && pt.Y >= r.Top && pt.Y < r.Bottom;
+            }
+            catch { return false; }
         }
 
         private void HideFavoritesSoon()
         {
+            FavLog.W($"HideSoon from {FavLog.Caller()} {FavState()}");
             EnsureFavHideTimer();
             _favHideTimer!.Stop();
             _favHideTimer.Start();
@@ -119,6 +170,7 @@ namespace PlankWin
 
         private void HideFavoritesPanel()
         {
+            if (_favHost != null) FavLog.W($"HIDE from {FavLog.Caller()} {FavState()}");
             RestoreTooltip(ref _tipFav);
             _favHideTimer?.Stop();
             if (_favHost != null)
@@ -135,11 +187,12 @@ namespace PlankWin
             _favHoverTimer.Tick += (s, e) =>
             {
                 _favHoverTimer!.Stop();
+                FavLog.W($"HoverTimer TICK pending={(_favPendingButton?.Tag as DockAppConfig)?.Name ?? "null"} btnMouseOver={_favPendingButton?.IsMouseOver} {FavState()}");
                 if (_favPendingButton == null) return;
                 bool wantFiles = _favPendingButton.Tag is DockAppConfig d && d.IsFavFiles;
                 if (_favHost != null && _favHost.IsVisible)
                 {
-                    if (wantFiles == _favFiles) return;   // уже открыта нужная
+                    if (wantFiles == _favFiles) { FavLog.W("HoverTimer: already open, skip"); return; }   // уже открыта нужная
                     HideFavoritesPanel();                 // открыта соседняя — переключаемся
                 }
                 ShowFavoritesPanel(_favPendingButton, activate: false);
@@ -154,6 +207,7 @@ namespace PlankWin
 
         private void ShowFavoritesPanel(Button btn, bool activate = true)
         {
+            FavLog.W($"SHOW start btn={(btn.Tag as DockAppConfig)?.Name} activate={activate} from {FavLog.Caller()} {FavState()}");
             HidePreview(); // взаимоисключение: избранное и превью не показываются одновременно
             _favButton = btn;
             _favFiles = btn.Tag is DockAppConfig fd && fd.IsFavFiles;
@@ -193,8 +247,8 @@ namespace PlankWin
                 sv.ScrollToVerticalOffset(sv.VerticalOffset - e.Delta * 0.4);
                 e.Handled = true;
             };
-            rootBorder.MouseEnter += (s, e) => _favHideTimer?.Stop();
-            rootBorder.MouseLeave += (s, e) => HideFavoritesSoon();
+            rootBorder.MouseEnter += (s, e) => { FavLog.W("Panel MouseEnter"); _favHideTimer?.Stop(); };
+            rootBorder.MouseLeave += (s, e) => { FavLog.W($"Panel MouseLeave cursorOverPanel={IsCursorOverFavHost()}"); HideFavoritesSoon(); };
             // Перетаскивание файлов/папок прямо в открытую панель.
             rootBorder.AllowDrop = true;
             rootBorder.DragOver += (s, e) =>
@@ -226,6 +280,10 @@ namespace PlankWin
                 ShowActivated = activate
             };
             _favShownTick = Environment.TickCount;
+            _favHost.Activated += (s, e) => FavLog.W($"Host Activated sinceShow={Environment.TickCount - _favShownTick}ms");
+            _favHost.IsVisibleChanged += (s, e) => FavLog.W($"Host IsVisible={e.NewValue}");
+            _favHost.Closed += (s, e) => FavLog.W("Host Closed");
+            _favHost.Deactivated += (s, e) => FavLog.W($"Host Deactivated sinceShow={Environment.TickCount - _favShownTick}ms {FavState()}");
             _favHost.Deactivated += (s, e) => { if (Environment.TickCount - _favShownTick < 400) return; if (_favMenuOpen || _favDragging || _favResizing || _favDialogOpen) return; _favClosedTick = Environment.TickCount; HideFavoritesPanel(); };
 
             // Показываем невидимым, ставим на место и проявляем после первой отрисовки содержимого —
@@ -233,8 +291,9 @@ namespace PlankWin
             _favHost.Opacity = 0;
             _favHost.Show();
             PositionFavHost();
+            FavLog.W($"SHOW done visible={_favHost.IsVisible} pos=({_favHost.Left:0},{_favHost.Top:0}) size=({_favHost.Width:0}x{_favHost.Height:0}) fg={Win32Helper.GetForegroundWindow()} me={new System.Windows.Interop.WindowInteropHelper(_favHost).Handle}");
             var hostRef = _favHost;
-            _favHost.Dispatcher.BeginInvoke(new Action(() => { if (hostRef == _favHost && hostRef != null) hostRef.Opacity = 1; }),
+            _favHost.Dispatcher.BeginInvoke(new Action(() => { FavLog.W($"Opacity->1 sameHost={hostRef == _favHost}"); if (hostRef == _favHost && hostRef != null) hostRef.Opacity = 1; }),
                 DispatcherPriority.Render);
 
             // Появление: scale (с ~85%) + fade.
