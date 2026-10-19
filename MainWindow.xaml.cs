@@ -2055,6 +2055,11 @@ namespace PlankWin
                 try
                 {
                     var hs = System.Runtime.InteropServices.Marshal.PtrToStructure<PlankWin.Win32Helper.MSLLHOOKSTRUCT>(lParam);
+                    // Над панелью избранного (она перекрывает прозрачную часть окна дока) колесо — её прокрутке.
+                    if (_favHost != null && _favHost.IsVisible
+                        && PlankWin.Win32Helper.GetWindowRect(new WindowInteropHelper(_favHost).Handle, out var fr)
+                        && hs.pt.X >= fr.Left && hs.pt.X < fr.Right && hs.pt.Y >= fr.Top && hs.pt.Y < fr.Bottom)
+                        return PlankWin.Win32Helper.CallNextHookEx(_scrollHookID, nCode, wParam, lParam);
                     if (PlankWin.Win32Helper.GetWindowRect(_mainHwnd, out var wr)
                         && hs.pt.X >= wr.Left && hs.pt.X <= wr.Right && hs.pt.Y >= wr.Top && hs.pt.Y <= wr.Bottom)
                     {
