@@ -2,7 +2,7 @@
 
 Док для Windows 10/11 в духе Plank. Закреплённые программы и открытые окна в одной панели — с живыми превью, jump lists, избранным и тем, чему таскбар так и не научился.
 
-**[Скачать последнюю версию](https://github.com/EugeneAlimov/PlankWin/releases/latest)** · [English](README.md)
+**[Скачать последнюю версию](https://github.com/EugeneAlimov/PlankWin/releases/latest)** · [Руководство пользователя](docs/MANUAL.ru.md) · [English](README.md)
 
 <p align="center">
   <img src="docs/dock.png" height="460" alt="Dock">
