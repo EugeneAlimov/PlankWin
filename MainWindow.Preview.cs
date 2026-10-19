@@ -64,6 +64,9 @@ namespace PlankWin
             // Кнопка "Избранное" в режиме наведения — открываем панель избранного по hover.
             if (app.IsFavorites)
             {
+                // Вернулись на кнопку уже открытой панели (например, из самой панели) — отменяем отложенное
+                // закрытие, иначе панель закрывается под курсором и по наведению уже не открывается.
+                if (_favHost != null && _favHost.IsVisible && _favFiles == app.IsFavFiles) _favHideTimer?.Stop();
                 // Открываем, если панели нет или открыта панель другой кнопки (звезда <-> файлы).
                 if (Settings.FavoritesOpenMode == FavoritesOpenMode.Hover && (_favHost == null || !_favHost.IsVisible || _favFiles != app.IsFavFiles))
                 {

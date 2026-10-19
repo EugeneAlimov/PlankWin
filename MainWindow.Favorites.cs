@@ -142,11 +142,17 @@ namespace PlankWin
                     if (wantFiles == _favFiles) return;   // уже открыта нужная
                     HideFavoritesPanel();                 // открыта соседняя — переключаемся
                 }
-                ShowFavoritesPanel(_favPendingButton);
+                ShowFavoritesPanel(_favPendingButton, activate: false);
             };
         }
 
-        private void ShowFavoritesPanel(Button btn)
+        // activate=false — открытие по наведению. Наведение не даёт процессу права на передний план:
+        // Windows активирует окно и тут же отбирает активацию обратно, Deactivated закрывал панель ещё
+        // невидимой (Opacity 0) — выглядело как «не открывается с первого раза». По наведению окно
+        // показываем без активации, закрытие — по уходу курсора; активируется оно при клике внутри.
+        private int _favShownTick;
+
+        private void ShowFavoritesPanel(Button btn, bool activate = true)
         {
             HidePreview(); // взаимоисключение: избранное и превью не показываются одновременно
             _favButton = btn;
@@ -208,9 +214,11 @@ namespace PlankWin
                 Width = isGrid ? Settings.FavGridWidth : Settings.FavListWidth,
                 Height = isGrid ? Settings.FavGridHeight : Settings.FavListHeight,
                 MinWidth = 160,
-                MinHeight = 120
+                MinHeight = 120,
+                ShowActivated = activate
             };
-            _favHost.Deactivated += (s, e) => { if (_favMenuOpen || _favDragging || _favResizing || _favDialogOpen) return; _favClosedTick = Environment.TickCount; HideFavoritesPanel(); };
+            _favShownTick = Environment.TickCount;
+            _favHost.Deactivated += (s, e) => { if (Environment.TickCount - _favShownTick < 400) return; if (_favMenuOpen || _favDragging || _favResizing || _favDialogOpen) return; _favClosedTick = Environment.TickCount; HideFavoritesPanel(); };
 
             // Показываем невидимым, ставим на место и проявляем после первой отрисовки содержимого —
             // иначе первый кадр прозрачного окна пустой и в углу экрана (моргание).
@@ -574,6 +582,11 @@ namespace PlankWin
                     menu.Items.Add(miOpen);
                     menu.Items.Add(miShow);
                     menu.Items.Add(new Separator());
+                    var miCopyF = new MenuItem { Header = Loc.T("f_copy") };
+                    miCopyF.Click += (s2, e2) => CopyPathsToClipboard(new[] { folder });
+                    miCopyF.IsEnabled = System.IO.File.Exists(folder);
+                    menu.Items.Add(miCopyF);
+                    menu.Items.Add(new Separator());
                     var miRename = new MenuItem { Header = Loc.T("f_rename") };
                     // После закрытия меню: модальный диалог из обработчика клика оставил бы меню висеть.
                     miRename.Click += (s2, e2) => Dispatcher.BeginInvoke(new Action(() => RenameFavFile(folder)));
@@ -591,6 +604,23 @@ namespace PlankWin
                     }
                     menu.Items.Add(new Separator());
                 }
+                else
+                {
+                    // Папка: копировать её саму, вставить в неё файлы из буфера обмена.
+                    bool exists = System.IO.Directory.Exists(folder);
+                    var miCopyD = new MenuItem { Header = Loc.T("f_copy"), IsEnabled = exists };
+                    miCopyD.Click += (s2, e2) => CopyPathsToClipboard(new[] { folder });
+                    var (clip, move) = GetClipboardFiles();
+                    var miPaste = new MenuItem
+                    {
+                        Header = Loc.T(move ? "f_moveInto" : "f_pasteInto") + (clip.Length > 1 ? $" ({clip.Length})" : ""),
+                        IsEnabled = exists && clip.Length > 0
+                    };
+                    miPaste.Click += (s2, e2) => PasteIntoFolder(folder);
+                    menu.Items.Add(miCopyD);
+                    menu.Items.Add(miPaste);
+                    menu.Items.Add(new Separator());
+                }
                 var list = FavList;
                 var miRemove = new MenuItem { Header = Loc.T("fav_remove") };
                 miRemove.Click += (s2, e2) =>
@@ -605,6 +635,102 @@ namespace PlankWin
                 menu.Closed += (s2, e2) => { _favMenuOpen = false; };
                 menu.IsOpen = true;
             };
+        }
+
+        // ===== Буфер обмена: копировать файл/папку, вставить в папку =====
+        // Формат как у Проводника: FileDrop + "Preferred DropEffect" (1 — копирование, 2 — вырезание).
+        private static void CopyPathsToClipboard(string[] paths)
+        {
+            try
+            {
+                var sc = new System.Collections.Specialized.StringCollection();
+                sc.AddRange(paths);
+                var data = new DataObject();
+                data.SetFileDropList(sc);
+                data.SetData("Preferred DropEffect", new System.IO.MemoryStream(BitConverter.GetBytes(1)));
+                Clipboard.SetDataObject(data, true);
+            }
+            catch { }
+        }
+
+        private static (string[] files, bool move) GetClipboardFiles()
+        {
+            try
+            {
+                if (!Clipboard.ContainsFileDropList()) return (Array.Empty<string>(), false);
+                var files = Clipboard.GetFileDropList().Cast<string>().Where(p => !string.IsNullOrEmpty(p)).ToArray();
+                bool move = false;
+                if (Clipboard.GetData("Preferred DropEffect") is System.IO.MemoryStream ms && ms.Length >= 4)
+                {
+                    var b = new byte[4];
+                    ms.Position = 0;
+                    ms.Read(b, 0, 4);
+                    move = (BitConverter.ToInt32(b, 0) & 2) != 0;
+                }
+                return (files, move);
+            }
+            catch { return (Array.Empty<string>(), false); }
+        }
+
+        // Копирование/перемещение через оболочку Windows: её прогресс, вопросы о замене, отмена.
+        // Отдельный STA-поток — длинное копирование не подвешивает док.
+        private void PasteIntoFolder(string folder)
+        {
+            var (files, move) = GetClipboardFiles();
+            if (files.Length == 0 || !System.IO.Directory.Exists(folder)) return;
+            HideFavoritesPanel();
+            var t = new System.Threading.Thread(() =>
+            {
+                bool anyMoved = false;
+                foreach (var src in files)
+                {
+                    try
+                    {
+                        bool isDir = System.IO.Directory.Exists(src);
+                        if (!isDir && !System.IO.File.Exists(src)) continue;
+                        string name = System.IO.Path.GetFileName(src.TrimEnd('\\'));
+                        string dst = System.IO.Path.Combine(folder, name);
+                        bool same = string.Equals(System.IO.Path.GetFullPath(src).TrimEnd('\\'),
+                            System.IO.Path.GetFullPath(dst).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+                        if (same)
+                        {
+                            if (move) continue;                 // вырезали и вставили туда же — нечего делать
+                            dst = UniqueCopyPath(folder, name, isDir); // копия рядом: «имя (2).ext»
+                        }
+                        var ui = Microsoft.VisualBasic.FileIO.UIOption.AllDialogs;
+                        var cancel = Microsoft.VisualBasic.FileIO.UICancelOption.DoNothing;
+                        if (isDir)
+                        {
+                            if (move) Microsoft.VisualBasic.FileIO.FileSystem.MoveDirectory(src, dst, ui, cancel);
+                            else Microsoft.VisualBasic.FileIO.FileSystem.CopyDirectory(src, dst, ui, cancel);
+                        }
+                        else
+                        {
+                            if (move) Microsoft.VisualBasic.FileIO.FileSystem.MoveFile(src, dst, ui, cancel);
+                            else Microsoft.VisualBasic.FileIO.FileSystem.CopyFile(src, dst, ui, cancel);
+                        }
+                        if (move) anyMoved = true;
+                    }
+                    catch { }
+                }
+                // Как Проводник: вырезанное после вставки из буфера убирается.
+                if (anyMoved) Dispatcher.BeginInvoke(new Action(() => { try { Clipboard.Clear(); } catch { } }));
+            });
+            t.SetApartmentState(System.Threading.ApartmentState.STA);
+            t.IsBackground = true;
+            t.Start();
+        }
+
+        private static string UniqueCopyPath(string folder, string name, bool isDir)
+        {
+            string stem = isDir ? name : System.IO.Path.GetFileNameWithoutExtension(name);
+            string ext = isDir ? "" : System.IO.Path.GetExtension(name);
+            for (int i = 2; i < 1000; i++)
+            {
+                string p = System.IO.Path.Combine(folder, $"{stem} ({i}){ext}");
+                if (!System.IO.File.Exists(p) && !System.IO.Directory.Exists(p)) return p;
+            }
+            return System.IO.Path.Combine(folder, $"{stem} ({Guid.NewGuid():N}){ext}");
         }
 
         // Пересобрать открытую панель (после удаления папки).
