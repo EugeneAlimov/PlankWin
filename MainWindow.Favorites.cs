@@ -90,6 +90,20 @@ namespace PlankWin
             _favHideTimer.Tick += (s, e) => { _favHideTimer!.Stop(); if (_favDialogOpen) return; HideFavoritesPanel(); };
         }
 
+        // Подсказка кнопки, всплывшая до панели, оказывается под ней (панель — более позднее topmost-окно).
+        // Поднимаем окно подсказки наверх без активации; доживает свои 5 секунд поверх панели.
+        private static void RaiseTooltipAbove(FrameworkElement owner)
+        {
+            try
+            {
+                if (owner.ToolTip is not ToolTip tt || !tt.IsOpen) return;
+                if (PresentationSource.FromVisual(tt) is not HwndSource src) return;
+                Win32Helper.SetWindowPos(src.Handle, Win32Helper.HWND_TOPMOST, 0, 0, 0, 0,
+                    Win32Helper.SWP_NOMOVE | Win32Helper.SWP_NOSIZE | Win32Helper.SWP_NOACTIVATE);
+            }
+            catch { }
+        }
+
         private void HideFavoritesSoon()
         {
             // Закрывать нечего — не заводим таймер: иначе он «доживает» и закрывает панель,
@@ -239,7 +253,7 @@ namespace PlankWin
             _favHost.Show();
             PositionFavHost();
             var hostRef = _favHost;
-            _favHost.Dispatcher.BeginInvoke(new Action(() => { if (hostRef == _favHost && hostRef != null) hostRef.Opacity = 1; }),
+            _favHost.Dispatcher.BeginInvoke(new Action(() => { if (hostRef == _favHost && hostRef != null) { hostRef.Opacity = 1; RaiseTooltipAbove(btn); } }),
                 DispatcherPriority.Render);
 
             // Появление: scale (с ~85%) + fade.
