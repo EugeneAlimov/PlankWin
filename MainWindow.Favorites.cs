@@ -156,6 +156,7 @@ namespace PlankWin
         {
             RestoreTooltip(ref _tipFav);
             _favHideTimer?.Stop();
+            _favHostHwnd = IntPtr.Zero;
             if (_favHost != null)
             {
                 try { _favHost.Close(); } catch { }
@@ -269,6 +270,7 @@ namespace PlankWin
             _favHost.Opacity = 0;
             _favHost.Show();
             PositionFavHost();
+            _favHostHwnd = new WindowInteropHelper(_favHost).Handle;
             // Панель уже после показа ещё раз поднимается наверх (WPF/DWM досинхронизирует topmost
             // в первые ~150 мс) и снова накрывает подсказку. Ловим каждое изменение её Z-порядка
             // и возвращаем открытую подсказку кнопки поверх.
