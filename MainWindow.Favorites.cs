@@ -119,6 +119,8 @@ namespace PlankWin
             catch { }
         }
 
+        private void OnFavHostZChanged(Button btn) => RaiseTooltipAbove(btn);
+
         private void HideFavoritesSoon()
         {
             // Закрывать нечего — не заводим таймер: иначе он «доживает» и закрывает панель,
@@ -267,6 +269,26 @@ namespace PlankWin
             _favHost.Opacity = 0;
             _favHost.Show();
             PositionFavHost();
+            // Панель уже после показа ещё раз поднимается наверх (WPF/DWM досинхронизирует topmost
+            // в первые ~150 мс) и снова накрывает подсказку. Ловим каждое изменение её Z-порядка
+            // и возвращаем открытую подсказку кнопки поверх.
+            try
+            {
+                var favSrc = HwndSource.FromHwnd(new WindowInteropHelper(_favHost).Handle);
+                favSrc?.AddHook((IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled) =>
+                {
+                    const int WM_WINDOWPOSCHANGED = 0x0047;
+                    const int SWP_NOZORDER = 0x0004;
+                    if (msg == WM_WINDOWPOSCHANGED && lParam != IntPtr.Zero)
+                    {
+                        int flags = System.Runtime.InteropServices.Marshal.ReadInt32(lParam, IntPtr.Size * 2 + 16);
+                        if ((flags & SWP_NOZORDER) == 0)
+                            Dispatcher.BeginInvoke(new Action(() => OnFavHostZChanged(btn)), DispatcherPriority.Send);
+                    }
+                    return IntPtr.Zero;
+                });
+            }
+            catch { }
             var hostRef = _favHost;
             _favHost.Dispatcher.BeginInvoke(new Action(() => { if (hostRef == _favHost && hostRef != null) { hostRef.Opacity = 1; RaiseTooltipAbove(btn); Dispatcher.BeginInvoke(new Action(() => RaiseTooltipAbove(btn)), DispatcherPriority.ApplicationIdle); } }),
                 DispatcherPriority.Render);
