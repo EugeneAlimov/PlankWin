@@ -4,6 +4,14 @@
 
 **[Скачать последнюю версию](https://github.com/EugeneAlimov/PlankWin/releases/latest)** · [English](README.md)
 
+<p align="center">
+  <img src="docs/dock.png" height="460" alt="Dock">
+  &nbsp;
+  <img src="docs/favorites.png" height="460" alt="Favorite folders">
+  &nbsp;
+  <img src="docs/favorite-files.png" height="460" alt="Favorite files">
+</p>
+
 ## Возможности
 
 - **Панель** у любого края экрана. Всегда видима, автоскрытие или умное скрытие. Плавная анимация, индикаторы запущенных программ, прокрутка, когда иконки не помещаются.

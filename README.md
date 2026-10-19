@@ -4,6 +4,14 @@ A dock for Windows 10/11, inspired by Plank. Pinned apps and running windows in 
 
 **[Download the latest release](https://github.com/EugeneAlimov/PlankWin/releases/latest)** · [Русская версия](README.ru.md)
 
+<p align="center">
+  <img src="docs/dock.png" height="460" alt="Dock">
+  &nbsp;
+  <img src="docs/favorites.png" height="460" alt="Favorite folders">
+  &nbsp;
+  <img src="docs/favorite-files.png" height="460" alt="Favorite files">
+</p>
+
 ## Features
 
 - **Dock** on any screen edge. Always visible, auto-hide or smart hide. Smooth animations, running indicators, overflow scrolling when icons don't fit.
