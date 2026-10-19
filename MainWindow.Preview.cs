@@ -71,6 +71,8 @@ namespace PlankWin
                 if (Settings.FavoritesOpenMode == FavoritesOpenMode.Hover && (_favHost == null || !_favHost.IsVisible || _favFiles != app.IsFavFiles))
                 {
                     _favPendingButton = btn;
+                    // Курсор на кнопке избранного: прежнюю панель сменит таймер наведения, а не закроет таймер ухода.
+                    _favHideTimer?.Stop();
                     EnsureFavHoverTimer();
                     _favHoverTimer!.Stop();
                     _favHoverTimer.Interval = TimeSpan.FromMilliseconds(Settings.PreviewDelayMs);

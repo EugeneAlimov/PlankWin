@@ -90,8 +90,43 @@ namespace PlankWin
             _favHideTimer.Tick += (s, e) => { _favHideTimer!.Stop(); if (_favDialogOpen) return; HideFavoritesPanel(); };
         }
 
+        // Подсказка кнопки, всплывшая до панели, оказывается под ней (панель — более позднее topmost-окно).
+        // Поднимаем окно подсказки наверх без активации; доживает свои 5 секунд поверх панели.
+        private static void RaiseTooltipAbove(FrameworkElement owner)
+        {
+            if (owner.ToolTip is ToolTip tt) RaiseTooltipWindow(tt);
+        }
+
+        // Любая открывшаяся подсказка кнопки дока — поверх всего, в т.ч. панели избранного.
+        // WPF переиспользует окно подсказки и при повторном показе не поднимает его по Z,
+        // поэтому при переходе между кнопками избранного подсказка оказывалась под панелью.
+        private void OnDockToolTipOpened(object sender, RoutedEventArgs e)
+        {
+            if (sender is not ToolTip tt) return;
+            RaiseTooltipWindow(tt);
+            Dispatcher.BeginInvoke(new Action(() => RaiseTooltipWindow(tt)), DispatcherPriority.ApplicationIdle);
+        }
+
+        private static void RaiseTooltipWindow(ToolTip tt)
+        {
+            try
+            {
+                if (!tt.IsOpen) return;
+                if (PresentationSource.FromVisual(tt) is not HwndSource src) return;
+                Win32Helper.SetWindowPos(src.Handle, Win32Helper.HWND_TOPMOST, 0, 0, 0, 0,
+                    Win32Helper.SWP_NOMOVE | Win32Helper.SWP_NOSIZE | Win32Helper.SWP_NOACTIVATE);
+            }
+            catch { }
+        }
+
+        private void OnFavHostZChanged(Button btn) => RaiseTooltipAbove(btn);
+
         private void HideFavoritesSoon()
         {
+            // Закрывать нечего — не заводим таймер: иначе он «доживает» и закрывает панель,
+            // открытую следом наведением на соседнюю кнопку (уход с «Файлов» -> звезда -> панель
+            // открылась и через ~100 мс закрылась этим старым таймером).
+            if (_favHost == null) return;
             EnsureFavHideTimer();
             _favHideTimer!.Stop();
             _favHideTimer.Start();
@@ -154,11 +189,11 @@ namespace PlankWin
 
         private void ShowFavoritesPanel(Button btn, bool activate = true)
         {
+            _favHideTimer?.Stop(); // отложенное закрытие относится к прежней панели, новую оно трогать не должно
             HidePreview(); // взаимоисключение: избранное и превью не показываются одновременно
             _favButton = btn;
             _favFiles = btn.Tag is DockAppConfig fd && fd.IsFavFiles;
-            RestoreTooltip(ref _tipFav);
-            _tipFav = SuppressTooltip(btn);
+            // Подсказку кнопки не прячем: она живёт свои 5 секунд (ShowDuration) и может перекрыть панель.
             FrameworkElement content = BuildFavContent();
 
             bool isGrid = Settings.FavoritesLayout == FavoritesLayoutMode.Grid;
@@ -234,8 +269,28 @@ namespace PlankWin
             _favHost.Opacity = 0;
             _favHost.Show();
             PositionFavHost();
+            // Панель уже после показа ещё раз поднимается наверх (WPF/DWM досинхронизирует topmost
+            // в первые ~150 мс) и снова накрывает подсказку. Ловим каждое изменение её Z-порядка
+            // и возвращаем открытую подсказку кнопки поверх.
+            try
+            {
+                var favSrc = HwndSource.FromHwnd(new WindowInteropHelper(_favHost).Handle);
+                favSrc?.AddHook((IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled) =>
+                {
+                    const int WM_WINDOWPOSCHANGED = 0x0047;
+                    const int SWP_NOZORDER = 0x0004;
+                    if (msg == WM_WINDOWPOSCHANGED && lParam != IntPtr.Zero)
+                    {
+                        int flags = System.Runtime.InteropServices.Marshal.ReadInt32(lParam, IntPtr.Size * 2 + 16);
+                        if ((flags & SWP_NOZORDER) == 0)
+                            Dispatcher.BeginInvoke(new Action(() => OnFavHostZChanged(btn)), DispatcherPriority.Send);
+                    }
+                    return IntPtr.Zero;
+                });
+            }
+            catch { }
             var hostRef = _favHost;
-            _favHost.Dispatcher.BeginInvoke(new Action(() => { if (hostRef == _favHost && hostRef != null) hostRef.Opacity = 1; }),
+            _favHost.Dispatcher.BeginInvoke(new Action(() => { if (hostRef == _favHost && hostRef != null) { hostRef.Opacity = 1; RaiseTooltipAbove(btn); Dispatcher.BeginInvoke(new Action(() => RaiseTooltipAbove(btn)), DispatcherPriority.ApplicationIdle); } }),
                 DispatcherPriority.Render);
 
             // Появление: scale (с ~85%) + fade.
