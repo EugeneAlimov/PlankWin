@@ -1580,6 +1580,13 @@ namespace PlankWin
                 return;
             }
 
+            if (DocFiles(e.Data) is string[] docs)
+            {
+                DropDocuments(sender, docs);
+                e.Handled = true;
+                return;
+            }
+
             HandleExternalDrop(sender, e);
         }
 
@@ -1784,6 +1791,7 @@ namespace PlankWin
 
         private void OnPanelDragLeave(object sender, DragEventArgs e)
         {
+            ClearOpenWithGlow();
             if (_isDragging) return;
 
             PlankWin.Win32Helper.GetCursorPos(out var pt);
@@ -1826,9 +1834,9 @@ namespace PlankWin
                     }
                 }
             }
-            else if (sender is Button ob && OpenWithFiles(ob, e.Data) != null)
+            else if (!IsFavButton(sender) && DocFiles(e.Data) is string[] docs)
             {
-                // Документ/папка над кнопкой программы — «открыть этой программой».
+                UpdateDocGlow(sender, docs);
                 e.Effects = DragDropEffects.Copy;
                 e.Handled = true;
             }
@@ -1838,20 +1846,26 @@ namespace PlankWin
             }
         }
 
-        // ===== Открыть файл программой: бросить документ на её иконку (как в Plank/macOS) =====
-        private Button? _openWithGlowBtn;
+        // ===== Документы и папки, брошенные на панель (кроме избранного) =====
+        // Каждый файл открывается своей программой по умолчанию — как двойной клик в Проводнике;
+        // смесь pdf+docx откроется и там, и там. Иконки этих программ на панели заранее подсвечиваются.
+        // Shift при броске на иконку — открыть все файлы именно этой программой.
+        private readonly List<Button> _openWithGlow = new();
 
-        // Файлы для «открыть этой программой», либо null, если бросок сюда не про это:
-        // exe/lnk/url — это закрепление; звезда, UWP, PWA и игры из лаунчеров файл не примут.
-        private string[]? OpenWithFiles(Button btn, IDataObject data)
+        private bool IsDocumentDrag(IDataObject data) =>
+            !_isDragging && data.GetDataPresent(DataFormats.FileDrop) && !HasValidExecutable(data);
+
+        private string[]? DocFiles(IDataObject data)
         {
-            if (_isDragging) return null;
-            if (btn.DataContext is not DockAppConfig app || app.IsFavorites || app.IsPlaceholder) return null;
-            if (!data.GetDataPresent(DataFormats.FileDrop) || HasValidExecutable(data)) return null;
-            if (data.GetData(DataFormats.FileDrop) is not string[] files || files.Length == 0) return null;
-            if (OpenWithExe(app) == null) return null;
-            return files.Where(f => System.IO.File.Exists(f) || System.IO.Directory.Exists(f)).ToArray() is { Length: > 0 } ok ? ok : null;
+            if (!IsDocumentDrag(data) || data.GetData(DataFormats.FileDrop) is not string[] files) return null;
+            var ok = files.Where(f => System.IO.File.Exists(f) || System.IO.Directory.Exists(f)).ToArray();
+            return ok.Length > 0 ? ok : null;
         }
+
+        private static bool IsFavButton(object sender) =>
+            sender is FrameworkElement fe && fe.DataContext is DockAppConfig a && a.IsFavorites;
+
+        private static bool ShiftHeld() => (PlankWin.Win32Helper.GetAsyncKeyState(0x10) & 0x8000) != 0;
 
         private string? OpenWithExe(DockAppConfig app)
         {
@@ -1859,6 +1873,66 @@ namespace PlankWin
             if (TryGetPwaLaunch(app.Path, out _, out _)) return null;
             string exe = ResolveLaunchPath(app.Path);
             return exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(exe) ? exe : null;
+        }
+
+        private (DockAppConfig app, Button btn)? ShiftTarget(object sender)
+        {
+            if (!ShiftHeld()) return null;
+            if (sender is Button b && b.DataContext is DockAppConfig a && !a.IsFavorites && !a.IsPlaceholder && OpenWithExe(a) != null) return (a, b);
+            return null;
+        }
+
+        // Кнопки на панели, чьи программы откроют эти файлы по умолчанию.
+        private List<Button> DefaultHandlerButtons(string[] files)
+        {
+            string explorer = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+            var exes = files
+                .Select(f => System.IO.Directory.Exists(f) ? explorer : FileAssoc.DefaultExe(System.IO.Path.GetExtension(f)))
+                .Where(x => x != null).Select(x => System.IO.Path.GetFileName(x!))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var res = new List<Button>();
+            foreach (var app in Apps)
+            {
+                if (app.IsFavorites || app.IsPlaceholder || app.IsDeleting) continue;
+                string? exe = OpenWithExe(app);
+                if (exe == null || !exes.Contains(System.IO.Path.GetFileName(exe))) continue;
+                if (FindAppButton(app) is Button b && !res.Contains(b)) res.Add(b);
+            }
+            return res;
+        }
+
+        private void UpdateDocGlow(object sender, string[] files)
+        {
+            var targets = ShiftTarget(sender) is { } st ? new List<Button> { st.btn } : DefaultHandlerButtons(files);
+            if (targets.SequenceEqual(_openWithGlow)) return;
+            ClearOpenWithGlow();
+            foreach (var b in targets)
+            {
+                b.Effect = new DropShadowEffect { Color = Color.FromRgb(0x4F, 0xC3, 0xF7), BlurRadius = 22, ShadowDepth = 0, Opacity = 1.0 };
+                _openWithGlow.Add(b);
+            }
+        }
+
+        private void DropDocuments(object sender, string[] files)
+        {
+            var st = ShiftTarget(sender);
+            ClearOpenWithGlow();
+            if (st is { } t) { OpenFilesWith(t.app, files, t.btn); return; }
+            foreach (var b in DefaultHandlerButtons(files)) AnimateLaunchBounce(b);
+            foreach (var f in files)
+            {
+                try { Process.Start(new ProcessStartInfo(f) { UseShellExecute = true }); }
+                catch (System.ComponentModel.Win32Exception w) when (w.NativeErrorCode == 1155)
+                {
+                    // Нет программы для этого типа — системный диалог «Чем открыть».
+                    try { Process.Start(new ProcessStartInfo(f) { UseShellExecute = true, Verb = "openas" }); } catch { }
+                }
+                catch (System.ComponentModel.Win32Exception w) when (w.NativeErrorCode == 1223) { }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"{Loc.T("err_launch")}\n{ex.Message}", "PlankWin", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
         }
 
         private void OpenFilesWith(DockAppConfig app, string[] files, Button btn)
@@ -1886,7 +1960,8 @@ namespace PlankWin
 
         private void ClearOpenWithGlow()
         {
-            if (_openWithGlowBtn != null) { _openWithGlowBtn.Effect = null; _openWithGlowBtn = null; }
+            foreach (var b in _openWithGlow) b.Effect = null;
+            _openWithGlow.Clear();
         }
 
         private void OnWindowDragOver(object sender, DragEventArgs e)
@@ -1922,6 +1997,14 @@ namespace PlankWin
                 return;
             }
 
+            if (DocFiles(e.Data) is string[] docs)
+            {
+                UpdateDocGlow(sender, docs);
+                e.Effects = DragDropEffects.Copy;
+                e.Handled = true;
+                return;
+            }
+
             if (HasValidExecutable(e.Data))
             {
                 ProcessExternalDrag(e);
@@ -1930,11 +2013,9 @@ namespace PlankWin
 
         private void OnIconDragEnter(object sender, DragEventArgs e)
         {
-            if (sender is Button owb && OpenWithFiles(owb, e.Data) != null)
+            if (!IsFavButton(sender) && DocFiles(e.Data) is string[] docs)
             {
-                ClearOpenWithGlow();
-                owb.Effect = new DropShadowEffect { Color = Color.FromRgb(0x4F, 0xC3, 0xF7), BlurRadius = 22, ShadowDepth = 0, Opacity = 1.0 };
-                _openWithGlowBtn = owb;
+                UpdateDocGlow(sender, docs);
                 return;
             }
             if (sender is Button btn && btn.DataContext is DockAppConfig app && app.IsFavorites
@@ -1950,7 +2031,6 @@ namespace PlankWin
 
         private void OnIconDragLeave(object sender, DragEventArgs e)
         {
-            if (ReferenceEquals(sender, _openWithGlowBtn)) ClearOpenWithGlow();
             if (sender is Button btn && btn.DataContext is DockAppConfig app && app.IsFavorites)
                 btn.Effect = null;
         }
@@ -1973,10 +2053,9 @@ namespace PlankWin
                     e.Handled = true;
                     return;
                 }
-                if (sender is Button owb && owb.DataContext is DockAppConfig owApp && OpenWithFiles(owb, e.Data) is string[] owFiles)
+                if (DocFiles(e.Data) is string[] docs)
                 {
-                    ClearOpenWithGlow();
-                    OpenFilesWith(owApp, owFiles, owb);
+                    DropDocuments(sender, docs);
                     e.Handled = true;
                     return;
                 }
