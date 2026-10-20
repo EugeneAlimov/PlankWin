@@ -1580,6 +1580,15 @@ namespace PlankWin
                 return;
             }
 
+            if (IsDocumentDrag(e.Data))
+            {
+                ClearOpenWithGlow();
+                if (DefaultHandlerOnPanel(e.Data) is { } h && e.Data.GetData(DataFormats.FileDrop) is string[] df)
+                    OpenFilesWith(h.app, df.Where(f => System.IO.File.Exists(f) || System.IO.Directory.Exists(f)).ToArray(), h.btn);
+                e.Handled = true;
+                return;
+            }
+
             HandleExternalDrop(sender, e);
         }
 
@@ -1784,6 +1793,7 @@ namespace PlankWin
 
         private void OnPanelDragLeave(object sender, DragEventArgs e)
         {
+            ClearOpenWithGlow();
             if (_isDragging) return;
 
             PlankWin.Win32Helper.GetCursorPos(out var pt);
@@ -1829,7 +1839,15 @@ namespace PlankWin
             else if (sender is Button ob && OpenWithFiles(ob, e.Data) != null)
             {
                 // Документ/папка над кнопкой программы — «открыть этой программой».
+                if (!ReferenceEquals(_openWithGlowBtn, ob)) GlowOpenWith(ob);
                 e.Effects = DragDropEffects.Copy;
+                e.Handled = true;
+            }
+            else if (sender is Button nb && IsDocumentDrag(e.Data) && nb.DataContext is DockAppConfig na && !na.IsFavorites)
+            {
+                // Эта программа такой файл не откроет — показываем «нельзя» вместо ложного запуска.
+                if (ReferenceEquals(_openWithGlowBtn, nb)) ClearOpenWithGlow();
+                e.Effects = DragDropEffects.None;
                 e.Handled = true;
             }
             else if (HasValidExecutable(e.Data))
@@ -1849,8 +1867,16 @@ namespace PlankWin
             if (btn.DataContext is not DockAppConfig app || app.IsFavorites || app.IsPlaceholder) return null;
             if (!data.GetDataPresent(DataFormats.FileDrop) || HasValidExecutable(data)) return null;
             if (data.GetData(DataFormats.FileDrop) is not string[] files || files.Length == 0) return null;
-            if (OpenWithExe(app) == null) return null;
-            return files.Where(f => System.IO.File.Exists(f) || System.IO.Directory.Exists(f)).ToArray() is { Length: > 0 } ok ? ok : null;
+            string? exe = OpenWithExe(app);
+            if (exe == null) return null;
+            var ok = files.Where(f => System.IO.File.Exists(f) || System.IO.Directory.Exists(f)).ToArray();
+            if (ok.Length == 0) return null;
+            // Программа должна уметь открывать этот тип (список «Открыть с помощью»). Папки принимают все.
+            // Shift — «всё равно открыть» (для программ, которые не регистрируют свои типы).
+            if (Keyboard.Modifiers != ModifierKeys.Shift
+                && ok.Any(f => System.IO.File.Exists(f) && !FileAssoc.Supports(System.IO.Path.GetExtension(f), exe)))
+                return null;
+            return ok;
         }
 
         private string? OpenWithExe(DockAppConfig app)
@@ -1882,6 +1908,36 @@ namespace PlankWin
             {
                 MessageBox.Show($"{Loc.T("err_launch")}\n{ex.Message}", "PlankWin", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private bool IsDocumentDrag(IDataObject data) =>
+            !_isDragging && data.GetDataPresent(DataFormats.FileDrop) && !HasValidExecutable(data);
+
+        private void GlowOpenWith(Button b)
+        {
+            ClearOpenWithGlow();
+            b.Effect = new DropShadowEffect { Color = Color.FromRgb(0x4F, 0xC3, 0xF7), BlurRadius = 22, ShadowDepth = 0, Opacity = 1.0 };
+            _openWithGlowBtn = b;
+        }
+
+        // Бросок документа на свободное место панели: открыть программой по умолчанию — если она есть на панели.
+        private (DockAppConfig app, Button btn)? DefaultHandlerOnPanel(IDataObject data)
+        {
+            if (!IsDocumentDrag(data) || data.GetData(DataFormats.FileDrop) is not string[] files || files.Length == 0) return null;
+            string first = files[0];
+            string? exe = System.IO.Directory.Exists(first)
+                ? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe")
+                : FileAssoc.DefaultExe(System.IO.Path.GetExtension(first));
+            if (exe == null) return null;
+            string exeName = System.IO.Path.GetFileName(exe);
+            foreach (var app in Apps)
+            {
+                if (app.IsFavorites || app.IsPlaceholder || app.IsDeleting) continue;
+                string? appExe = OpenWithExe(app);
+                if (appExe == null || !System.IO.Path.GetFileName(appExe).Equals(exeName, StringComparison.OrdinalIgnoreCase)) continue;
+                if (FindAppButton(app) is Button b) return (app, b);
+            }
+            return null;
         }
 
         private void ClearOpenWithGlow()
@@ -1922,6 +1978,15 @@ namespace PlankWin
                 return;
             }
 
+            if (IsDocumentDrag(e.Data))
+            {
+                var h = DefaultHandlerOnPanel(e.Data);
+                if (h is { } hh) { if (!ReferenceEquals(_openWithGlowBtn, hh.btn)) GlowOpenWith(hh.btn); e.Effects = DragDropEffects.Copy; }
+                else { ClearOpenWithGlow(); e.Effects = DragDropEffects.None; }
+                e.Handled = true;
+                return;
+            }
+
             if (HasValidExecutable(e.Data))
             {
                 ProcessExternalDrag(e);
@@ -1932,9 +1997,7 @@ namespace PlankWin
         {
             if (sender is Button owb && OpenWithFiles(owb, e.Data) != null)
             {
-                ClearOpenWithGlow();
-                owb.Effect = new DropShadowEffect { Color = Color.FromRgb(0x4F, 0xC3, 0xF7), BlurRadius = 22, ShadowDepth = 0, Opacity = 1.0 };
-                _openWithGlowBtn = owb;
+                GlowOpenWith(owb);
                 return;
             }
             if (sender is Button btn && btn.DataContext is DockAppConfig app && app.IsFavorites
