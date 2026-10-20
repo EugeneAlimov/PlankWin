@@ -87,12 +87,18 @@ namespace PlankWin
                         }));
                         break;
 
+                    case HSHELL_FLASH:
+                        OnShellWindowFlash(targetHwnd);
+                        break;
+
                     case HSHELL_WINDOWDESTROYED:
+                        ClearAttentionForWindow(targetHwnd);
                         OnShellWindowDestroyed(targetHwnd);
                         break;
 
                     case HSHELL_WINDOWACTIVATED:
                     case HSHELL_RUDEAPPACTIVATED:
+                        ClearAttentionForWindow(targetHwnd);
                         OnShellWindowActivated(targetHwnd);
                         break;
 
