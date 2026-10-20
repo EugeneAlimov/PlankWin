@@ -38,7 +38,7 @@ A dock for Windows 10/11, inspired by Plank. Pinned apps and running windows in 
 - **Favorites**: a star button for folders and a separate one for files. Drag & drop to add, rename for the dock without touching the file, copy items or paste the clipboard straight into a favorite folder.
 - **Keyboard & clicks**: modifier + 1…9 opens the N-th app, modifier + 0 opens favorites. Shift-click opens a new window, Ctrl+Shift-click runs as administrator, Alt-click shows the app's folder.
 - **Badges & attention**: unread counters from window titles (Telegram, WhatsApp, mail…); the icon bounces when an app asks for attention (flashes on the taskbar).
-- **Drop to open**: drop a document or folder on an app icon to open it with that app.
+- **Drop to open**: drop documents or folders anywhere on the dock — each opens with its default app (the matching icons light up while you drag). Shift-drop on an icon opens them with that app.
 - **Looks**: follows the Windows light/dark theme and accent color automatically, or your own colors; corner radius, borders, flat or wing-profile panel.
 - **Languages**: English, Русский, Українська, Deutsch.
 
