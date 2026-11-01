@@ -324,6 +324,9 @@ namespace PlankWin
             if (string.Equals(app.ProcessName, "LogixDesigner", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(app.ProcessName, "RS5000", StringComparison.OrdinalIgnoreCase)) return true;
             string path = app.Path ?? string.Empty;
+            // Лаунчер Studio 5000 называется просто Launcher.exe — без папки Rockwell не берём.
+            if (string.Equals(exe, "Launcher.exe", StringComparison.OrdinalIgnoreCase) &&
+                path.IndexOf("Rockwell", StringComparison.OrdinalIgnoreCase) >= 0) return true;
             return path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
                    (path.IndexOf(@"\Studio 5000\", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     path.IndexOf(@"\RSLogix 5000\", StringComparison.OrdinalIgnoreCase) >= 0);
@@ -332,7 +335,20 @@ namespace PlankWin
         public List<RecentItem> Get(DockAppConfig app)
         {
             var paths = Read();
+            // Окна Logix Designer: свои у иконки + главные окна всех процессов LogixDesigner
+            // (у иконки лаунчера своих окон нет — проекты открывает другой процесс).
             var titles = app.WindowHandles.ToList().Select(h => (h, t: RecentDocs.GetTitle(h))).ToList();
+            foreach (var pn in new[] { "LogixDesigner", "RS5000" })
+            {
+                System.Diagnostics.Process[] procs;
+                try { procs = System.Diagnostics.Process.GetProcessesByName(pn); } catch { continue; }
+                foreach (var pr in procs)
+                {
+                    try { if (pr.MainWindowHandle != IntPtr.Zero) titles.Add((pr.MainWindowHandle, pr.MainWindowTitle)); }
+                    catch { }
+                    finally { pr.Dispose(); }
+                }
+            }
             var result = new List<RecentItem>();
             foreach (var p in paths)
             {
