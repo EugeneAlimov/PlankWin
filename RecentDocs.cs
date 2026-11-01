@@ -315,6 +315,7 @@ namespace PlankWin
     public sealed class Studio5000RecentProvider : IRecentProvider
     {
         private const string Key = @"Software\Rockwell Software\Studio 5000\RecentFiles";
+        private static readonly Regex LogixExt = new(@"\.(acd|l5x|l5k)$", RegexOptions.IgnoreCase);
         private static readonly string[] ExeNames = { "LogixDesigner.exe", "RS5000.exe", "Studio 5000.exe", "Studio5000.exe", "Studio5000Launcher.exe" };
 
         public bool CanHandle(DockAppConfig app)
@@ -376,7 +377,8 @@ namespace PlankWin
                              .Where(x => x.ok).OrderBy(x => x.i).Select(x => x.n))
                 {
                     string s = (k.GetValue(n) as string ?? string.Empty).Trim();
-                    if (s.Length > 0 && !list.Contains(s, StringComparer.OrdinalIgnoreCase)) list.Add(s);
+                    // В тот же список Studio 5000 пишет и чужое (папки View ME «…\en-US») — берём только проекты Logix.
+                    if (s.Length > 0 && LogixExt.IsMatch(s) && !list.Contains(s, StringComparer.OrdinalIgnoreCase)) list.Add(s);
                 }
             }
             catch { }
