@@ -49,7 +49,7 @@ namespace PlankWin
         public const int MaxItems = 12;
 
         // Порядок важен: специализированные провайдеры раньше общего jump list.
-        private static readonly IRecentProvider[] Providers = { new TiaPortalRecentProvider(), new OfficeRecentProvider(), new JumpListRecentProvider() };
+        private static readonly IRecentProvider[] Providers = { new TiaPortalRecentProvider(), new Studio5000RecentProvider(), new OfficeRecentProvider(), new JumpListRecentProvider() };
 
         public static IRecentProvider? FindProvider(DockAppConfig app)
         {
@@ -112,6 +112,12 @@ namespace PlankWin
                 return;
             }
             string ext = System.IO.Path.GetExtension(path);
+            // .ACD — только через оболочку: лаунчер Studio 5000 сам выберет нужную версию Logix Designer.
+            if (string.Equals(ext, ".acd", StringComparison.OrdinalIgnoreCase))
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
+                return;
+            }
             string? assocExe = GetAssocExe(ext);
             bool sameExe = false;
             try
@@ -301,6 +307,63 @@ namespace PlankWin
             }
             catch { }
             _cache[file] = (stamp, list);
+            return list;
+        }
+    }
+    // Studio 5000 Logix Designer / RSLogix 5000: HKCU\Software\Rockwell Software\Studio 5000\RecentFiles,
+    // значения "0", "1"… (REG_SZ, полный путь к .ACD; пустые — дыры, пропускаем). Меньший номер — свежее.
+    public sealed class Studio5000RecentProvider : IRecentProvider
+    {
+        private const string Key = @"Software\Rockwell Software\Studio 5000\RecentFiles";
+        private static readonly string[] ExeNames = { "LogixDesigner.exe", "RS5000.exe", "Studio 5000.exe", "Studio5000.exe", "Studio5000Launcher.exe" };
+
+        public bool CanHandle(DockAppConfig app)
+        {
+            string exe = System.IO.Path.GetFileName(app.Path ?? string.Empty);
+            if (ExeNames.Any(n => string.Equals(n, exe, StringComparison.OrdinalIgnoreCase))) return true;
+            if (string.Equals(app.ProcessName, "LogixDesigner", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(app.ProcessName, "RS5000", StringComparison.OrdinalIgnoreCase)) return true;
+            string path = app.Path ?? string.Empty;
+            return path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
+                   (path.IndexOf(@"\Studio 5000\", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    path.IndexOf(@"\RSLogix 5000\", StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
+        public List<RecentItem> Get(DockAppConfig app)
+        {
+            var paths = Read();
+            var titles = app.WindowHandles.ToList().Select(h => (h, t: RecentDocs.GetTitle(h))).ToList();
+            var result = new List<RecentItem>();
+            foreach (var p in paths)
+            {
+                if (result.Count >= RecentDocs.MaxItems) break;
+                var it = new RecentItem { Path = p, Label = RecentDocs.LabelOf(p) };
+                // Заголовок: «Logix Designer - Имя [1756-L83E 32.11]» — пути нет, сверяем по имени проекта.
+                string name = System.IO.Path.GetFileNameWithoutExtension(p);
+                var w = titles.FirstOrDefault(x => Regex.IsMatch(x.t ?? string.Empty, @"(^|[\s\\-])" + Regex.Escape(name) + @"(\.ACD)?(\s|\[|$)", RegexOptions.IgnoreCase));
+                if (w.h != IntPtr.Zero) { it.IsOpenNow = true; it.Window = w.h; it.Note = Loc.T("rc_open"); }
+                result.Add(it);
+            }
+            // Открытые — наверх, остальные в порядке MRU.
+            return result.OrderByDescending(r => r.IsOpenNow).ToList();
+        }
+
+        private static List<string> Read()
+        {
+            var list = new List<string>();
+            try
+            {
+                using var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(Key);
+                if (k == null) return list;
+                foreach (var n in k.GetValueNames()
+                             .Select(n => (n, ok: int.TryParse(n, out int i), i))
+                             .Where(x => x.ok).OrderBy(x => x.i).Select(x => x.n))
+                {
+                    string s = (k.GetValue(n) as string ?? string.Empty).Trim();
+                    if (s.Length > 0 && !list.Contains(s, StringComparer.OrdinalIgnoreCase)) list.Add(s);
+                }
+            }
+            catch { }
             return list;
         }
     }
