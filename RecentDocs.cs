@@ -56,9 +56,22 @@ namespace PlankWin
             if (app == null || app.IsFavorites) return null;
             foreach (var p in Providers)
             {
-                try { if (p.CanHandle(app)) return p; } catch { }
+                try { if (p.CanHandle(app)) { DebugLog(app, p); return p; } } catch (Exception ex) { DebugLog(app, null, ex.Message); }
             }
+            DebugLog(app, null);
             return null;
+        }
+
+        // ВРЕМЕННО: какой провайдер выбран для иконки → %LocalAppData%\PlankWin\recent-debug.log
+        private static void DebugLog(DockAppConfig app, IRecentProvider? p, string? err = null)
+        {
+            try
+            {
+                string line = $"{DateTime.Now:HH:mm:ss} ver={typeof(RecentDocs).Assembly.GetName().Version} exe={Environment.ProcessPath} | " +
+                              $"name={app.Name} path={app.Path} proc={app.ProcessName} wins={app.WindowHandles.Count} -> {(p?.GetType().Name ?? "none")} {err}";
+                File.AppendAllText(System.IO.Path.Combine(PlankConfig.GetDataDir(), "recent-debug.log"), line + Environment.NewLine);
+            }
+            catch { }
         }
 
         public static List<RecentItem> Get(DockAppConfig app)
