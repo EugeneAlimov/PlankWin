@@ -453,6 +453,11 @@
                             <ComboBoxItem Content="{DynamicResource L_layout_list}" Tag="{x:Static local:FavoritesLayoutMode.List}"/>
                             <ComboBoxItem Content="{DynamicResource L_layout_grid}" Tag="{x:Static local:FavoritesLayoutMode.Grid}"/>
                         </ComboBox>
+                        <TextBlock Text="{DynamicResource L_favFilesLayout}" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,4"/>
+                        <ComboBox SelectedValuePath="Tag" SelectedValue="{Binding FavFilesLayout}" Margin="0,0,0,15">
+                            <ComboBoxItem Content="{DynamicResource L_layout_list}" Tag="{x:Static local:FavoritesLayoutMode.List}"/>
+                            <ComboBoxItem Content="{DynamicResource L_layout_grid}" Tag="{x:Static local:FavoritesLayoutMode.Grid}"/>
+                        </ComboBox>
                         <TextBlock Text="{DynamicResource L_favOpen}" Foreground="{DynamicResource MenuTextBrush}" Margin="0,0,0,4"/>
                         <ComboBox SelectedValuePath="Tag" SelectedValue="{Binding FavoritesOpenMode}" Margin="0,0,0,15">
                             <ComboBoxItem Content="{DynamicResource L_open_click}" Tag="{x:Static local:FavoritesOpenMode.Click}"/>
