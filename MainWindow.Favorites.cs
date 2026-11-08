@@ -638,6 +638,14 @@ namespace PlankWin
             {
                 e.Handled = true;
                 var menu = new ContextMenu();
+                if (!FavItemExists(folder))
+                {
+                    var miFind = new MenuItem { Header = Loc.T("f_relocate"), FontWeight = FontWeights.SemiBold };
+                    // После закрытия меню — модальный диалог из обработчика клика оставил бы меню висеть.
+                    miFind.Click += (s2, e2) => Dispatcher.BeginInvoke(new Action(() => RelocateFavItem(folder)));
+                    menu.Items.Add(miFind);
+                    menu.Items.Add(new Separator());
+                }
                 if (_favFiles)
                 {
                     // Файл: открыть, показать в папке, убрать.
@@ -926,9 +934,9 @@ namespace PlankWin
         private void ApplyFavItemTipAndState(FrameworkElement el, string path)
         {
             // Сетевые пути не проверяем: недоступная шара подвесила бы открытие панели.
-            bool exists = RecentDocs.IsNetworkPath(path) || (_favFiles ? System.IO.File.Exists(path) : System.IO.Directory.Exists(path));
+            bool exists = FavItemExists(path);
             string tip = _favFiles ? System.IO.Path.GetFileName(path) + "\n" + System.IO.Path.GetDirectoryName(path) : path;
-            if (!exists) { tip += "\n" + Loc.T("f_missing"); el.Opacity = 0.45; }
+            if (!exists) { tip += "\n" + Loc.T(_favFiles ? "f_missing" : "f_missingDir") + " — " + Loc.T("f_relocateHint"); el.Opacity = 0.45; }
             el.ToolTip = tip;
             ToolTipService.SetInitialShowDelay(el, 700);
         }
@@ -954,6 +962,93 @@ namespace PlankWin
         }
 
         private bool _favDialogOpen;
+
+        // Сетевые пути не проверяем: недоступная шара подвесила бы панель.
+        private bool FavItemExists(string path) =>
+            RecentDocs.IsNetworkPath(path) || (_favFiles ? System.IO.File.Exists(path) : System.IO.Directory.Exists(path));
+
+        // «Найти заново…»: файл/папка переехали или переименованы — выбрать новое место,
+        // пункт остаётся на своей позиции и сохраняет своё имя для панели.
+        private void RelocateFavItem(string oldPath)
+        {
+            bool files = _favFiles;
+            var list = FavList;
+            string trimmed = oldPath.TrimEnd('\\');
+            string name = System.IO.Path.GetFileName(trimmed);
+            string? start = NearestExistingDir(System.IO.Path.GetDirectoryName(trimmed));
+            string? guess = GuessMoved(start, name, files);
+
+            _favDialogOpen = true;
+            _favHideTimer?.Stop();
+            string? picked = null;
+            try
+            {
+                Window? owner = _favHost != null && _favHost.IsVisible ? _favHost : null;
+                if (files)
+                {
+                    string ext = System.IO.Path.GetExtension(name);
+                    var dlg = new Microsoft.Win32.OpenFileDialog
+                    {
+                        Title = Loc.T("f_relocate") + " " + name,
+                        CheckFileExists = true,
+                        Filter = ext.Length > 0 ? $"*{ext}|*{ext}|*.*|*.*" : "*.*|*.*",
+                        // Нашли такой же файл рядом — сразу на нём; иначе в ближайшей живой папке.
+                        InitialDirectory = guess != null ? System.IO.Path.GetDirectoryName(guess) : start,
+                        FileName = guess != null ? System.IO.Path.GetFileName(guess) : name
+                    };
+                    if (owner != null ? dlg.ShowDialog(owner) == true : dlg.ShowDialog() == true) picked = dlg.FileName;
+                }
+                else
+                {
+                    var dlg = new Microsoft.Win32.OpenFolderDialog
+                    {
+                        Title = Loc.T("f_relocate") + " " + name,
+                        InitialDirectory = guess != null ? System.IO.Path.GetDirectoryName(guess) : start,
+                        FolderName = guess ?? string.Empty
+                    };
+                    if (owner != null ? dlg.ShowDialog(owner) == true : dlg.ShowDialog() == true) picked = dlg.FolderName;
+                }
+            }
+            catch { }
+            finally { _favDialogOpen = false; }
+
+            if (string.IsNullOrEmpty(picked) || string.Equals(picked, oldPath, StringComparison.OrdinalIgnoreCase)) return;
+            int i = list.IndexOf(oldPath);
+            if (i < 0) return;
+            if (list.Contains(picked, StringComparer.OrdinalIgnoreCase)) list.RemoveAt(i); // уже есть в избранном — просто убираем пропавший
+            else list[i] = picked;
+            if (Settings.FavoriteFileNames.Remove(oldPath, out var alias) && !Settings.FavoriteFileNames.ContainsKey(picked))
+                Settings.FavoriteFileNames[picked] = alias;
+            PlankConfig.Save(AppContext.BaseDirectory, _profileName, Settings);
+            RefreshFavoritesPanel();
+        }
+
+        private static string? NearestExistingDir(string? dir)
+        {
+            try
+            {
+                while (!string.IsNullOrEmpty(dir) && !RecentDocs.IsNetworkPath(dir) && !System.IO.Directory.Exists(dir))
+                    dir = System.IO.Path.GetDirectoryName(dir);
+            }
+            catch { return null; }
+            return string.IsNullOrEmpty(dir) || RecentDocs.IsNetworkPath(dir) ? null : dir;
+        }
+
+        // Переложили в подпапку или на уровень выше: ищем то же имя неглубоко от ближайшей живой папки.
+        // Корень диска и сеть не обходим — долго. Берём только единственное совпадение.
+        private static string? GuessMoved(string? root, string name, bool files)
+        {
+            if (string.IsNullOrEmpty(root) || string.IsNullOrEmpty(name)) return null;
+            try
+            {
+                if (System.IO.Path.GetPathRoot(root)?.TrimEnd('\\') == root.TrimEnd('\\')) return null;
+                var opt = new System.IO.EnumerationOptions { RecurseSubdirectories = true, MaxRecursionDepth = 3, IgnoreInaccessible = true, MatchCasing = System.IO.MatchCasing.CaseInsensitive };
+                var found = (files ? System.IO.Directory.EnumerateFiles(root, name, opt) : System.IO.Directory.EnumerateDirectories(root, name, opt))
+                    .Take(2).ToList();
+                return found.Count == 1 ? found[0] : null;
+            }
+            catch { return null; }
+        }
 
         // «Переименовать для панели…»: своё имя хранится в настройках, файл не трогается.
         private void RenameFavFile(string path)
@@ -1006,7 +1101,11 @@ namespace PlankWin
 
         private void OpenFavItem(string path)
         {
-            if (_favFiles && !System.IO.File.Exists(path)) return;
+            if (!FavItemExists(path))
+            {
+                Dispatcher.BeginInvoke(new Action(() => RelocateFavItem(path)));
+                return;
+            }
             try { Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true }); } catch { }
             HideFavoritesPanel();
         }
