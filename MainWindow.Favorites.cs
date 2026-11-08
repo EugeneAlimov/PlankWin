@@ -915,7 +915,10 @@ namespace PlankWin
         private static readonly System.Collections.Generic.Dictionary<string, ImageSource?> _extIconCache = new(StringComparer.OrdinalIgnoreCase);
         private ImageSource? FavItemIcon(string path)
         {
-            if (!_favFiles) return AppIconConverter.ExtractIconFromPath(path);
+            if (!_favFiles)
+                return System.IO.Directory.Exists(path) || RecentDocs.IsNetworkPath(path)
+                    ? AppIconConverter.ExtractIconFromPath(path) ?? AppIconConverter.GenericFolderIcon()
+                    : AppIconConverter.GenericFolderIcon(); // пропавшая папка — обычная иконка папки, а не пустота
             string ext = System.IO.Path.GetExtension(path);
             if (_extIconCache.TryGetValue(ext, out var cached) && cached != null) return cached;
             ImageSource? img = null;
@@ -976,7 +979,9 @@ namespace PlankWin
             string trimmed = oldPath.TrimEnd('\\');
             string name = System.IO.Path.GetFileName(trimmed);
             string? start = NearestExistingDir(System.IO.Path.GetDirectoryName(trimmed));
+            var sw = Stopwatch.StartNew();
             string? guess = GuessMoved(start, name, files);
+            RelocateLog($"old={oldPath} start={start} guess={guess} {sw.ElapsedMilliseconds}ms");
 
             _favDialogOpen = true;
             _favHideTimer?.Stop();
@@ -1000,11 +1005,11 @@ namespace PlankWin
                 }
                 else
                 {
+                    // Нашли — открываем диалог прямо внутри найденной папки: «Выбор папки» сразу выберет её.
                     var dlg = new Microsoft.Win32.OpenFolderDialog
                     {
                         Title = Loc.T("f_relocate") + " " + name,
-                        InitialDirectory = guess != null ? System.IO.Path.GetDirectoryName(guess) : start,
-                        FolderName = guess ?? string.Empty
+                        InitialDirectory = guess ?? start
                     };
                     if (owner != null ? dlg.ShowDialog(owner) == true : dlg.ShowDialog() == true) picked = dlg.FolderName;
                 }
@@ -1034,20 +1039,59 @@ namespace PlankWin
             return string.IsNullOrEmpty(dir) || RecentDocs.IsNetworkPath(dir) ? null : dir;
         }
 
-        // Переложили в подпапку или на уровень выше: ищем то же имя неглубоко от ближайшей живой папки.
-        // Корень диска и сеть не обходим — долго. Берём только единственное совпадение.
-        private static string? GuessMoved(string? root, string name, bool files)
+        // Переложили рядом: ищем то же имя до 3 уровней вглубь от ближайшей живой папки, потом от её
+        // родителя и деда. Корень диска не обходим, скрытые/системные папки и AppData пропускаем,
+        // на всё — не больше 1.5 с. Берём только однозначное совпадение.
+        private static string? GuessMoved(string? start, string name, bool files)
         {
-            if (string.IsNullOrEmpty(root) || string.IsNullOrEmpty(name)) return null;
+            if (string.IsNullOrEmpty(start) || string.IsNullOrEmpty(name)) return null;
+            var sw = Stopwatch.StartNew();
+            string? dir = start;
             try
             {
-                if (System.IO.Path.GetPathRoot(root)?.TrimEnd('\\') == root.TrimEnd('\\')) return null;
-                var opt = new System.IO.EnumerationOptions { RecurseSubdirectories = true, MaxRecursionDepth = 3, IgnoreInaccessible = true, MatchCasing = System.IO.MatchCasing.CaseInsensitive };
-                var found = (files ? System.IO.Directory.EnumerateFiles(root, name, opt) : System.IO.Directory.EnumerateDirectories(root, name, opt))
-                    .Take(2).ToList();
-                return found.Count == 1 ? found[0] : null;
+                for (int up = 0; up < 3 && !string.IsNullOrEmpty(dir); up++)
+                {
+                    if (string.Equals(System.IO.Path.GetPathRoot(dir)?.TrimEnd('\\'), dir.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) break;
+                    var hits = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    ScanFor(dir, name, files, 3, hits, sw);
+                    if (hits.Count == 1) return hits.First();
+                    if (hits.Count > 1 || sw.ElapsedMilliseconds > 1500) return null;
+                    dir = System.IO.Path.GetDirectoryName(dir);
+                }
             }
-            catch { return null; }
+            catch { }
+            return null;
+        }
+
+        private static readonly string[] _scanSkip = { "AppData", "node_modules", ".git", "$RECYCLE.BIN", "System Volume Information" };
+
+        private static void ScanFor(string root, string name, bool files, int maxDepth, System.Collections.Generic.HashSet<string> hits, Stopwatch sw)
+        {
+            var queue = new System.Collections.Generic.Queue<(string dir, int depth)>();
+            queue.Enqueue((root, 0));
+            while (queue.Count > 0 && hits.Count < 2 && sw.ElapsedMilliseconds < 1500)
+            {
+                var (d, depth) = queue.Dequeue();
+                string cand = System.IO.Path.Combine(d, name);
+                if (files ? System.IO.File.Exists(cand) : System.IO.Directory.Exists(cand)) hits.Add(cand);
+                if (depth >= maxDepth) continue;
+                try
+                {
+                    foreach (var sub in new System.IO.DirectoryInfo(d).EnumerateDirectories())
+                    {
+                        if ((sub.Attributes & (System.IO.FileAttributes.Hidden | System.IO.FileAttributes.System | System.IO.FileAttributes.ReparsePoint)) != 0) continue;
+                        if (_scanSkip.Contains(sub.Name, StringComparer.OrdinalIgnoreCase)) continue;
+                        queue.Enqueue((sub.FullName, depth + 1));
+                    }
+                }
+                catch { }
+            }
+        }
+
+        // ВРЕМЕННО: отладка поиска → %LocalAppData%\PlankWin\relocate-debug.log
+        private static void RelocateLog(string line)
+        {
+            try { System.IO.File.AppendAllText(System.IO.Path.Combine(PlankConfig.GetDataDir(), "relocate-debug.log"), $"{DateTime.Now:HH:mm:ss} {line}{Environment.NewLine}"); } catch { }
         }
 
         // «Переименовать для панели…»: своё имя хранится в настройках, файл не трогается.
