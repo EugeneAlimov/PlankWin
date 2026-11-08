@@ -227,6 +227,22 @@ namespace PlankWin
             return GetAumidFromProcess(hwnd);
         }
 
+        private static BitmapSource? _genericFolder;
+        // Стандартная иконка папки без обращения к диску (SHGFI_USEFILEATTRIBUTES) — для пропавших папок.
+        internal static BitmapSource? GenericFolderIcon()
+        {
+            if (_genericFolder != null) return _genericFolder;
+            const uint FILE_ATTRIBUTE_DIRECTORY = 0x10, SHGFI_USEFILEATTRIBUTES = 0x10;
+            var info = new Win32Helper.SHFILEINFO();
+            IntPtr res = Win32Helper.SHGetFileInfo("folder", FILE_ATTRIBUTE_DIRECTORY, out info, (uint)Marshal.SizeOf(info),
+                Win32Helper.SHGFI_ICON | Win32Helper.SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES);
+            if (res == IntPtr.Zero || info.hIcon == IntPtr.Zero) return null;
+            var img = Imaging.CreateBitmapSourceFromHIcon(info.hIcon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+            img.Freeze();
+            Win32Helper.DestroyIcon(info.hIcon);
+            return _genericFolder = img;
+        }
+
         internal static BitmapSource? ExtractIconFromPath(string path)
         {
             if (string.IsNullOrEmpty(path)) return null;
