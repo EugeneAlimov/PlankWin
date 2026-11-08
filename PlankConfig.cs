@@ -383,6 +383,41 @@ namespace PlankWin
             set { double c = Math.Max(120, value); if (_favGridHeight != c) { _favGridHeight = c; OnPropertyChanged(); } }
         }
 
+        // Панель файлов — своя раскладка и свои размеры. Пока не заданы (старый конфиг) —
+        // берутся значения панели папок, чтобы после обновления ничего не прыгнуло.
+        private FavoritesLayoutMode? _favFilesLayout;
+        private double? _favFilesListWidth, _favFilesListHeight, _favFilesGridWidth, _favFilesGridHeight;
+
+        public FavoritesLayoutMode FavFilesLayout
+        {
+            get => _favFilesLayout ?? _favoritesLayout;
+            set { if (_favFilesLayout != value) { _favFilesLayout = value; OnPropertyChanged(); } }
+        }
+
+        public double FavFilesListWidth
+        {
+            get => _favFilesListWidth ?? _favListWidth;
+            set { double c = Math.Max(160, value); if (_favFilesListWidth != c) { _favFilesListWidth = c; OnPropertyChanged(); } }
+        }
+
+        public double FavFilesListHeight
+        {
+            get => _favFilesListHeight ?? _favListHeight;
+            set { double c = Math.Max(120, value); if (_favFilesListHeight != c) { _favFilesListHeight = c; OnPropertyChanged(); } }
+        }
+
+        public double FavFilesGridWidth
+        {
+            get => _favFilesGridWidth ?? _favGridWidth;
+            set { double c = Math.Max(200, value); if (_favFilesGridWidth != c) { _favFilesGridWidth = c; OnPropertyChanged(); } }
+        }
+
+        public double FavFilesGridHeight
+        {
+            get => _favFilesGridHeight ?? _favGridHeight;
+            set { double c = Math.Max(120, value); if (_favFilesGridHeight != c) { _favFilesGridHeight = c; OnPropertyChanged(); } }
+        }
+
         public DockVisibilityMode VisibilityMode
         {
             get => _visibilityMode;

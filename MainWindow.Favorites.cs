@@ -197,8 +197,9 @@ namespace PlankWin
             // Подсказку кнопки не прячем: она живёт свои 5 секунд (ShowDuration) и может перекрыть панель.
             FrameworkElement content = BuildFavContent();
 
-            bool isGrid = Settings.FavoritesLayout == FavoritesLayoutMode.Grid;
+            bool isGrid = FavLayoutIsGrid(_favFiles);
             _favIsGrid = isGrid;
+            var (favW, favH) = FavSize(_favFiles, isGrid);
             var scale = new ScaleTransform(1, 1);
             // Обводка, чтобы окно не сливалось с фоном: при акценте — как у панели, иначе тонкая контрастная линия.
             Color favBg = Colors.Gray;
@@ -256,8 +257,8 @@ namespace PlankWin
                 Background = Brushes.Transparent,
                 Topmost = true,
                 Content = BuildHostWithGrips(rootBorder),
-                Width = isGrid ? Settings.FavGridWidth : Settings.FavListWidth,
-                Height = isGrid ? Settings.FavGridHeight : Settings.FavListHeight,
+                Width = favW,
+                Height = favH,
                 MinWidth = 160,
                 MinHeight = 120,
                 ShowActivated = activate
@@ -321,7 +322,7 @@ namespace PlankWin
                     FontSize = 12
                 };
             }
-            else if (Settings.FavoritesLayout == FavoritesLayoutMode.Grid)
+            else if (FavLayoutIsGrid(_favFiles))
             {
                 var wrap = new EvenWrapPanel { HorizontalAlignment = HorizontalAlignment.Stretch };
                 foreach (var folder in folders)
@@ -825,10 +826,49 @@ namespace PlankWin
             if (btn != null) ShowFavoritesPanel(btn);
         }
 
+        // Раскладка и размеры — у панели папок и панели файлов свои.
+        private bool FavLayoutIsGrid(bool files) =>
+            (files ? Settings.FavFilesLayout : Settings.FavoritesLayout) == FavoritesLayoutMode.Grid;
+
+        private (double w, double h) FavSize(bool files, bool grid) => files
+            ? (grid ? (Settings.FavFilesGridWidth, Settings.FavFilesGridHeight) : (Settings.FavFilesListWidth, Settings.FavFilesListHeight))
+            : (grid ? (Settings.FavGridWidth, Settings.FavGridHeight) : (Settings.FavListWidth, Settings.FavListHeight));
+
+        private void SetFavSize(bool files, bool grid, double w, double h)
+        {
+            if (files)
+            {
+                if (grid) { Settings.FavFilesGridWidth = w; Settings.FavFilesGridHeight = h; }
+                else { Settings.FavFilesListWidth = w; Settings.FavFilesListHeight = h; }
+            }
+            else
+            {
+                if (grid) { Settings.FavGridWidth = w; Settings.FavGridHeight = h; }
+                else { Settings.FavListWidth = w; Settings.FavListHeight = h; }
+            }
+        }
+
+        private void SetFavLayout(bool files, FavoritesLayoutMode mode)
+        {
+            if (files) Settings.FavFilesLayout = mode; else Settings.FavoritesLayout = mode;
+            PlankConfig.Save(AppContext.BaseDirectory, _profileName, Settings);
+            // Открыта эта же панель — закрываем: при следующем открытии она соберётся в новой раскладке и своём размере.
+            if (_favHost != null && _favHost.IsVisible && _favFiles == files) HideFavoritesPanel();
+        }
+
         // ПКМ по звезде -> выбор способа открытия (синхронизировано с настройками).
         private void ShowFavoritesModeMenu(FrameworkElement target)
         {
             var menu = new ContextMenu();
+            bool filesPanel = target.DataContext is DockAppConfig lt && lt.IsFavFiles;
+            bool gridNow = FavLayoutIsGrid(filesPanel);
+            var miList = new MenuItem { Header = Loc.T("layout_list"), IsCheckable = true, IsChecked = !gridNow };
+            miList.Click += (s, e) => SetFavLayout(filesPanel, FavoritesLayoutMode.List);
+            var miGrid = new MenuItem { Header = Loc.T("layout_grid"), IsCheckable = true, IsChecked = gridNow };
+            miGrid.Click += (s, e) => SetFavLayout(filesPanel, FavoritesLayoutMode.Grid);
+            menu.Items.Add(miList);
+            menu.Items.Add(miGrid);
+            menu.Items.Add(new Separator());
             var miClick = new MenuItem
             {
                 Header = Loc.T("open_click"),
@@ -1324,8 +1364,7 @@ namespace PlankWin
                 if (_favResizing && _favHost != null)
                 {
                     _favResizing = false;
-                    if (_favIsGrid) { Settings.FavGridWidth = _favHost.Width; Settings.FavGridHeight = _favHost.Height; }
-                    else { Settings.FavListWidth = _favHost.Width; Settings.FavListHeight = _favHost.Height; }
+                    SetFavSize(_favFiles, _favIsGrid, _favHost.Width, _favHost.Height);
                     PlankConfig.Save(AppContext.BaseDirectory, _profileName, Settings);
                 }
             };
