@@ -979,9 +979,7 @@ namespace PlankWin
             string trimmed = oldPath.TrimEnd('\\');
             string name = System.IO.Path.GetFileName(trimmed);
             string? start = NearestExistingDir(System.IO.Path.GetDirectoryName(trimmed));
-            var sw = Stopwatch.StartNew();
             string? guess = GuessMoved(start, name, files);
-            RelocateLog($"old={oldPath} start={start} guess={guess} {sw.ElapsedMilliseconds}ms");
 
             _favDialogOpen = true;
             _favHideTimer?.Stop();
@@ -1086,12 +1084,6 @@ namespace PlankWin
                 }
                 catch { }
             }
-        }
-
-        // ВРЕМЕННО: отладка поиска → %LocalAppData%\PlankWin\relocate-debug.log
-        private static void RelocateLog(string line)
-        {
-            try { System.IO.File.AppendAllText(System.IO.Path.Combine(PlankConfig.GetDataDir(), "relocate-debug.log"), $"{DateTime.Now:HH:mm:ss} {line}{Environment.NewLine}"); } catch { }
         }
 
         // «Переименовать для панели…»: своё имя хранится в настройках, файл не трогается.
